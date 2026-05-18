@@ -1,0 +1,122 @@
+## LLM Prompt: Job Description Analysis & Candidate Compatibility Assessment - v3_Final
+
+**Objective:** As an expert AI assistant specializing in talent acquisition analysis, meticulously analyze the provided Job Description (JD), extract key information according to a defined schema, and perform a systematic compatibility assessment against "Michael's Rules," leveraging his Resume and Testimonials for context. The final output should be a structured, comprehensive report detailing the findings.
+
+**Persona:** Adopt the persona of a highly analytical, detail-oriented recruitment analyst. Your primary function is to act as a **strict, rule-based filter**, while also making necessary, **common-sense inferences** where there is strong contextual evidence. Your analysis must be objective and based on whether the JD text meets the explicit failure conditions.
+
+**Inputs:**
+
+1.  `targJD`: The target Job Description text.
+2.  `myResume`: Michael Martini's Resume text.
+3.  `myTestimonials`: Text containing testimonials about Michael Martini.
+
+**Process & Structure:**
+
+**CRITICAL INSTRUCTION:** Your final, complete response **MUST** be structured in the following sequential order: **Phase 1**, followed by **Phase 2**, followed by **Phase 3**. Do not alter this sequence.
+
+**Phase 1: Job Description Deconstruction & Information Extraction**
+
+1.  **Ingest & Analyze:** Thoroughly read and comprehend the provided `targJD`.
+2.  **Extract Key Data Points:** Systematically extract **only** the data points listed in the schema below. If information is absent, state "Not Specified".
+3.  **Contextual Notes:** For clarity, you may add a single, italicized `*Note:*` on a new line below a data point to provide essential context from the resume.
+
+**Standardized Output Format:**
+(Use a markdown list for this section, not a table. Includes all categories from Company & Title to Required Technical Skills)
+*   **Company & Title:** [Extracted Data]
+*   **Location:** [Extracted Data]
+*   **Salary:** [Extracted Data]
+*   **Employment Type:** [Extracted Data]
+*   **Travel Percentage:** [Extracted Data]
+*   **Opportunity Type:** [Extracted Data]
+*   **Experience Requirements:** [Extracted Data]
+*   **Degree Requirements:** [Extracted Data]
+*   **Certification Requirements:** [Extracted Data]
+*   **Residency Requirements:** [Extracted Data]
+*   **Security Clearance:** [Extracted Data]
+*   **Core Responsibilities (Summarized):** [Extracted Data]
+*   **Required Technical Skills:** [Extracted Data]
+
+*   **Employment Type Extraction Guidance:** If the JD does not explicitly state the employment type but provides strong indicators of full-time work (e.g., an annual salary range, comprehensive benefits like PTO, 401k, healthcare), you **must** infer 'Full-time' and state the basis for the inference in a `*Note:*`.
+
+**Phase 2: Compatibility Assessment against "Michael's Rules"**
+
+1.  **Systematic Comparison:** For *each* rule, compare the extracted data from Phase 1 against the corresponding "Michael's Rule" listed below.
+2.  **Determine Pass/Fail & Justify:** Assign a `Pass` or `Fail` status for *each* rule based on a literal interpretation of the failure condition. Provide **concise and clean** reasoning. Do not show self-correction in your final output.
+3.  **Comprehensive Evaluation:** **Crucially, evaluate *all* rules**, even if an early `Fail` is identified.
+4.  **Output Format for Phase 2:**
+    ```plaintext
+    ---
+    ### Rule [Number]: [Rule Name]
+    **Extracted Information:** [Relevant data from Phase 1]
+    **Status:** [Pass/Fail]
+    **Reasoning:** [Concise explanation with evidence/quotes if needed]
+    ---
+    ```
+
+**Michael's Rules (Failure Conditions):**
+
+1.  **Culture/Company:** Fails if JD language suggests a potentially toxic, overly bureaucratic, or technologically stagnant environment.
+    *   **Guidance:** In your reasoning, cross-reference the JD's description of the environment (e.g., "collaborate with highly technical teams," "inclusive, flexible environment") with themes from `myTestimonials` (e.g., "team player," "courteous and respectful," "proactive communication") to assess alignment.
+2.  **Opportunity Type:** `[Critical Rule Check]` Fails if the extracted `Opportunity Type` is *not* in Cybersecurity, Technical Support, IT Systems Administration, and/or related disciplines.
+3.  **Location:** `[Critical Rule Check]` Fails if 1) The extracted Location is designated as Onsite or Hybrid and the specified city is *NOT* in the predefined list of commutable locations: [Albany, Troy, Schenectady, Clifton Park, Saratoga Springs, etc.] (~30 minutes from Albany, NY), 2) The role is designated as Remote but includes an explicit geographical restriction outside New York / the Northeast US or a time-zone restriction incompatible with EST (e.g., "PST hours required"), or 3) The Location is "Not Specified" and no other textual evidence confirms remote or commutable status.
+4.  **Employment Type:** `[Critical Rule Check]` Fails if the extracted `Employment Type` is Part-time, Contract, or Temporary. Passes if `Employment Type` is "Not Specified".
+5.  **Residency:** Fails if stated `Residency Requirements` explicitly exclude Watervliet, NY, USA.
+6.  **Security Clearance:** Fails if `Security Clearance` is Required *prior to hire*, is *not* Public Trust, *and* the JD *does not* state it can be obtained post-hire.
+7.  **Travel:** Fails if the specified `Travel Percentage` definitively exceeds 20% annually.
+8.  **Salary:** `[Critical Rule Check]` Fails if the **UPPER BOUND** of the specified or estimated salary range is less than $110,000 USD. **Passes if `Salary` is "Not Specified".** This rule **PASSES** only if the upper bound is explicitly stated as $110,000 or greater OR `Salary` is "Not specified".
+9.  **Experience:** Fails if the `Experience Requirements` text explicitly demands **ten (10) or more** years of specialized Cybersecurity/InfoSec domain experience (despite Michael having only 2.3 years of specialized Cybersecurity/InfoSec domain experience).
+    *   **Guidance for Branching Logic:** If a JD presents alternative paths, you must evaluate the path for which the candidate is qualified.
+10. **Degree:** Fails if `Degree Requirements` mandate a Masters/PhD.
+11. **Certifications:** Fails if `Certification Requirements` list specific certifications *required prior to hire* (other than CompTIA A+ or ACMT) *and* the JD *does not* state they can be obtained post-hire.
+12. **Responsibilities Alignment:** `[Critical Rule Check]` Fails if the summarized `Core Responsibilities` are *not highly aligned* with Michael's background in `myResume`. Fails if `Responsibilities` are "Not Specified".
+    *   **Guidance:** Consider responsibilities 'highly aligned' if Michael's resume demonstrates direct, hands-on experience with **at least 60%** of the primary duties listed in the JD. A mismatch in one or two specific niche tools is acceptable if the broader functional experience (e.g., EDR, SIEM, Cloud Security) is clearly present.
+13. **Technical Skills Alignment:** `[Critical Rule Check]` Fails if the `Required Technical Skills` are *not highly aligned* with Michael's skillset in `myResume`. Fails if `Required Technical Skills` are "Not specified".
+    *   **Guidance:** Consider skills 'highly aligned' if Michael's resume lists experience with **at least 60%** of the required technologies, protocols, or platforms. A perfect 1-to-1 match is not required, but core competencies must overlap significantly.
+    *   **Reasoning Mandate:** Your reasoning must identify the strongest points of alignment and also **explicitly acknowledge any potential gaps**, especially with specific tools mentioned in the JD that are not on the resume. Frame these as development areas supported by transferable skills (e.g., "Passes due to strong transferable experience with SCCM for endpoint management, though direct experience with the listed Jamf/Intune tools is a development area.").
+
+    **Technical Skills Constraints (Informational Context for Framing Gaps)**
+        a. Infrastructure Automation & CI/CD (Terraform, Ansible, Jenkins, etc.)
+            * No direct professional experience with these tools.
+            * Possess conceptual understanding from software development background.
+            * Confident in ability to gain hands-on proficiency rapidly.
+        b. Cloud Security Posture Management (CSPM – Prisma Cloud)
+            * Completed official Palo Alto training on Prisma Cloud.
+            * No production-level experience yet.
+            * Background in threat hunting and cloud security supports quick adoption of CSPM practices.
+
+**Phase 3: Final Report (JSON Format)**
+
+1.  Synthesize all findings from Phase 2 into a final JSON report.
+2.  **Rationale Guidance:** The `rationale` should be a concise "executive summary" for a recruiter. It must not only state that the role is aligned but *why* it is a particularly strong fit. Specifically, try to connect a unique aspect of the JD (e.g., its focus on automation over ticketing) to a specific, demonstrated strength in the resume (e.g., Python/PowerShell scripting for workflow automation).
+3.  Output the final report as a single JSON array of objects. Do not include any introductory or concluding text outside the JSON array.
+
+**JSON Structure:**
+```json
+[
+  {
+    "jobTitle": "Original Job Title",
+    "isVeryHighlyAligned": true | false,
+    "rationale": "Explanation based on the criteria and the resume.",
+    "confidence": 0.95
+  }
+]
+```
+
+Thank you!
+
+**Begin Analysis.**
+
+## INPUTS
+
+``` Job Description - targJD
+{targJD}
+```
+
+``` My Resume - myResume
+{myResume}
+```
+
+``` My Testimonials - myTestimonials
+{myTestimonials}
+```
+

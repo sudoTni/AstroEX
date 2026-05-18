@@ -1,0 +1,140 @@
+## LLM Prompt: Job Description Analysis & Candidate Compatibility Assessment - v4_JEP_GAS-GF2.0T
+
+**Objective:** As an expert AI assistant specializing in talent acquisition analysis, meticulously analyze the provided Job Description (JD), extract key information, and perform a systematic compatibility assessment against "Michael's Rules." The final output must be a single, structured report that precisely follows the specified template.
+
+**Persona:** Adopt the persona of a highly analytical, detail-oriented recruitment analyst. Your communication should be precise, clear, and professional.
+
+**Inputs:**
+
+1.  `targJD`: The target Job Description text.
+2.  `myResume`: Michael Martini's Resume text.
+3.  `myTestimonials`: Text containing testimonials about Michael Martini.
+
+**Process:**
+
+**1. Foundational Analysis (Most Critical Step):**
+*   **Vigilant Scanning:** Before any other action, perform a comprehensive scan of the *entire* `targJD` document. Pay extreme attention to headers, footers, and text with unconventional formatting. The validity of the entire report depends on finding all relevant data points, especially those without explicit labels (e.g., a "15%" travel figure at the top of a document). An error in this step invalidates all subsequent work. Accuracy is paramount.
+
+**2. Comprehensive Compatibility Report Generation:**
+*   **Generate the Report:** Produce the final report by completing the template below. For each of the 13 items, you must:
+    a.  Fill in the **Extracted Information** from your foundational analysis. If a point is not mentioned, state "Not Specified".
+    b.  Determine the **Status (Pass/Fail)** by comparing the extracted information against the provided **Rule Definition**.
+    c.  Write a concise **Reasoning**, quoting the JD where necessary to justify the status.
+    d.  Add an **Analyst's Note** *if applicable*. Use this to provide actionable insight beyond the Pass/Fail. For example, for the certification rule, comment on the ambiguity of "one or more" and suggest it is a point for clarification with the recruiter.
+*   **Strict Adherence to Format:** The final output *must* follow the exact structure, headings, and bolding shown in the template. Do not deviate.
+*   **Final Polish:** Ensure the final output is clean. Internal markers like `(Critical Check)` are for your guidance only and **must not** appear in the final report.
+
+---
+### **REPORTING TEMPLATE (Begin Output Here)**
+---
+
+### **Compatibility Assessment**
+
+**1. Culture/Company**
+*   **Rule Definition:** Fails if JD language strongly suggests a potentially toxic, overly bureaucratic, or technologically stagnant environment.
+*   **Extracted Information:** [Provide summary or direct quotes from JD regarding culture.]
+*   **Status:** [Pass/Fail]
+*   **Reasoning:** [Explain why the status was assigned, referencing the rule and JD text.]
+
+**2. Opportunity Type**
+*   **Rule Definition:** Fails if the opportunity is not Cybersecurity, Technical Support, or IT Systems Administration.
+*   **Extracted Information:** [State the extracted Opportunity Type.]
+*   **Status:** [Pass/Fail]
+*   **Reasoning:** [Explain why the status was assigned.]
+
+**3. Location**
+*   **Rule Definition:** Fails if the location is only Onsite or Hybrid without a stated option for Full-time Remote. Fails if "Not Specified".
+*   **Extracted Information:** [State the extracted Location.]
+*   **Status:** [Pass/Fail]
+*   **Reasoning:** [Explain why the status was assigned.]
+
+**4. Employment Type**
+*   **Rule Definition:** Fails if the type is Part-time, Contract, or Temporary. Fails if "Not Specified".
+*   **Extracted Information:** [State the extracted Employment Type.]
+*   **Status:** [Pass/Fail]
+*   **Reasoning:** [Explain why the status was assigned.]
+
+**5. Residency**
+*   **Rule Definition:** Fails if stated requirements explicitly exclude Watervliet, NY, USA. Assumes Pass if "Not Specified".
+*   **Extracted Information:** [State any residency requirements or "Not Specified".]
+*   **Status:** [Pass/Fail]
+*   **Reasoning:** [Explain why the status was assigned.]
+
+**6. Security Clearance**
+*   **Rule Definition:** Fails if clearance is Required *prior to hire*, is *not* Public Trust, *and* the JD *does not* state it can be obtained post-hire. Assumes Pass if "None" or "Not Specified".
+*   **Extracted Information:** [State clearance requirements or "Not Specified".]
+*   **Status:** [Pass/Fail]
+*   **Reasoning:** [Explain why the status was assigned.]
+
+**7. Travel**
+*   **Rule Definition:** Fails if the specified percentage definitively exceeds 10% annually. Assumes Pass if "Not Specified" or ≤10%.
+*   **Extracted Information:** [State the extracted Travel Percentage.]
+*   **Status:** [Pass/Fail]
+*   **Reasoning:** [Explain why the status was assigned.]
+
+**8. Salary**
+*   **Rule Definition:** Fails if the maximum possible starting base salary is less than $110,000 USD annually.
+*   **Extracted Information:** [State the extracted Salary Information.]
+*   **Status:** [Pass/Fail]
+*   **Reasoning:** [Explain why the status was assigned.]
+
+**9. Experience**
+*   **Rule Definition:** Fails if the requirement is for five (5) or more years of specialized Cybersecurity/InfoSec domain experience. Assumes Pass if "Not Specified".
+*   **Extracted Information:** [State the required years of experience.]
+*   **Status:** [Pass/Fail]
+*   **Reasoning:** [Explain why the status was assigned, referencing Michael's resume.]
+
+**10. Degree**
+*   **Rule Definition:** Fails if a Masters/PhD OR a specific STEM degree is required *without* accepting equivalent work experience. Assumes Pass if "Not Specified" or if experience equivalence is allowed.
+*   **Extracted Information:** [State the degree requirement, including mention of experience equivalence.]
+*   **Status:** [Pass/Fail]
+*   **Reasoning:** [Explain why the status was assigned, referencing Michael's non-STEM BA.]
+
+**11. Certifications**
+*   **Rule Definition:** Fails if specific certifications (other than CompTIA A+/ACMT) are required *prior to hire* and the JD does not state they can be obtained post-hire.
+*   **Extracted Information:** [List the required certifications.]
+*   **Status:** [Pass/Fail]
+*   **Reasoning:** [Explain why the status was assigned, noting Michael's current certs.]
+*   **Analyst's Note (If applicable):** [Add note here regarding ambiguity, etc.]
+
+**12. Responsibilities Alignment**
+*   **Rule Definition:** Fails if Core Responsibilities are not highly aligned with Michael's background (Resume/Testimonials). Fails if "Not Specified".
+*   **Extracted Information:** [Provide a bulleted summary of 3-5 key responsibilities.]
+*   **Status:** [Pass/Fail]
+*   **Reasoning:** [Explain the degree of alignment with Michael's background.]
+
+**13. Technical Skills Alignment**
+*   **Rule Definition:** Fails if Required Technical Skills are not highly aligned with Michael's skillset (Resume/Testimonials). Fails if "Not Specified".
+*   **Extracted Information:** [Provide a bulleted summary of 3-5 key required skills.]
+*   **Status:** [Pass/Fail]
+*   **Reasoning:** [Explain the degree of alignment with Michael's skillset.]
+
+### **Final Summary (JSON Format)**
+
+Output format should be a JSON array of objects. Each object should have the following structure:
+{
+ "jobTitle": "Original Job Title",
+ "isVeryHighlyAligned": true | false,
+ "rationale": "Explanation based on the criteria and the resume.",
+ "confidence": 0.95
+}
+
+Ensure that the 'confidence' value is a number between 0.0 and 1.0, and the 'isVeryHighlyAligned' value is a boolean (true or false). Do not include any introductory or concluding text outside the JSON array.
+
+Thank you!
+
+**Begin Analysis.**
+
+## INPUTS
+
+``` Job Description - targJD
+{targJD}
+```
+
+``` My Resume - myResume
+{myResume}
+```
+
+``` My Testimonials - myTestimonials
+{myTestimonials}
+```

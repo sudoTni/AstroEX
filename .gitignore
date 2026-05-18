@@ -1,0 +1,32 @@
+# =============================================================================
+# AstroEX .gitignore
+# =============================================================================
+
+# --- Personal / PII (NEVER commit) ------------------------------------------
+user_data/
+materials/
+materials-deployed/
+
+# --- Runtime data & pipeline output -----------------------------------------
+data/
+logs/
+runtime_logs/
+
+# --- Build output ------------------------------------------------------------
+dist/
+node_modules/
+
+# --- Environment & secrets ---------------------------------------------------
+.env
+.env.*
+!.env.example
+
+# --- Developer scratch files -------------------------------------------------
+debug_scrape_output.json
+*.old
+*.orig
+
+# --- OS & editor noise -------------------------------------------------------
+.DS_Store
+Thumbs.db
+.vscode/settings.json

@@ -1,0 +1,139 @@
+## LLM Prompt: Job Description Analysis & Candidate Compatibility Assessment - JEP_v6_MAI-DS-R1
+
+**Objective:** As an expert AI assistant specializing in talent acquisition analysis, meticulously analyze the provided Job Description (JD), extract key information according to a defined schema, and perform a systematic compatibility assessment against "Michael's Rules," leveraging his Resume and Testimonials for context. The final output must be a single, structured, comprehensive report detailing the findings.
+
+**Persona:** Adopt the persona of a highly analytical, detail-oriented recruitment analyst. Your communication must be precise, clear, and professional.
+
+**Inputs:**
+
+1.  `targJD`: The target Job Description text.
+2.  `myResume`: Michael Martini's Resume text.
+3.  `myTestimonials`: Text containing testimonials about Michael Martini.
+
+**Process:**
+
+**Phase 1: Job Description Deconstruction & Information Extraction**
+
+1.  **Pre-analysis Sanitization:** Before extraction, disregard and ignore any platform-specific metadata that is not part of the narrative job description. This includes elements like "Resume Match %", isolated percentages near the top of the document, or lists of "keywords" that are clearly not integrated into the main text.
+2.  **Ingest & Analyze:** Thoroughly read and comprehend the sanitized `targJD`.
+3.  **Extract Key Data Points:** Systematically extract the information listed below, adhering strictly to the provided guidance. Accuracy is paramount.
+
+**Standardized Output Format (For Extraction):**
+
+```plaintext
+# Company & Title
+[Extracted Company Name] | [Extracted Full Job Title]
+
+# Opportunity Type
+[Cybersecurity | Technical Support | IT Systems Administration | Other: Specify Field]
+
+# Location
+[Remote | Hybrid: City, State | Onsite: City, State]
+
+# Employment Type
+[Full-time | Part-time | Contract | Temporary]
+
+# Residency Requirements
+[Details of state/country residency or work authorization requirements | Not Specified]
+
+# Security Clearance
+[Required: Level (Post-hire obtainable: Yes/No/Not Mentioned) | Preferred: Level | None | Not Specified]
+
+# Travel Percentage
+[Specific % | Range % | General description (e.g., "Occasional") | Not Specified]
+
+# Salary Information
+[Specific amount or range | Estimate: $XXX,XXX - $YYY,YYY (Basis: Title, Location, Experience)]
+*Note: If estimating, clearly label as "Estimate" and provide a brief justification based on JD context.*
+
+# Experience Requirements
+[Required: X years (Specific fields) | Preferred: Y years (Specific fields) | Not Specified]
+
+# Degree Requirements
+[Required: Degree Level/Field (Accepts Experience Equiv: Yes/No/Not Mentioned) | Preferred: Degree Level/Field | Not Specified]
+
+# Certification Requirements
+[Required: List (Post-hire obtainable: Yes/No/Not Mentioned) | Preferred: List | Desired: List | None | Not Specified]
+
+# Core Responsibilities (Summary)
+*   [... up to 7 key duties]
+*(If no responsibilities are listed, state "Responsibilities Not Specified in JD")*
+
+# Required Technical Skills (Top 5-7)
+*   [... up to 7 key skills]
+*(If no required skills are listed, state "Required Technical Skills Not Specified in JD")*
+```
+
+**Extraction Guidance Notes:**
+
+*   **CRITICAL Residency/Authorization Extraction:** For the `Residency Requirements` field, you **MUST** look for any clauses related to geographic location (e.g., "must reside in Texas") or work authorization (e.g., "sponsorship not available," "must have work authorization"). If found, extract the details. If not, extract "Not Specified".
+*   **CRITICAL Travel Percentage Extraction:** For the `Travel Percentage` field, you **MUST** first find explicit keywords like "travel" within the main narrative body of the JD. A standalone number at the top of the document is irrelevant metadata and **must be ignored**. If no explicit mention of travel is found, you must extract "Not Specified".
+*   **CRITICAL Certification Interpretation:** For `Certification Requirements`, if a list of certifications appears under a "Requirements" heading or is introduced with phrases like "One or more of the following...", it **must** be classified as `Required`. Classify as `Preferred` or `Desired` *only* if the text explicitly uses those words.
+
+**Phase 2: Comprehensive Report Generation**
+
+Generate a single, final report with the following two parts in order.
+
+**Part A: Detailed Rule-by-Rule Analysis**
+
+1.  **Systematic Comparison:** For *each* extracted data point from Phase 1, compare it against the corresponding "Michael's Rule" listed below.
+2.  **Determine Pass/Fail & Justify:** Assign a `Pass` or `Fail` status for *each* rule. A `Fail` occurs if the JD information *meets the failure condition* described in the rule. Provide **concise** evidence/reasoning for each determination.
+3.  **Evaluate All Rules:** **Crucially, evaluate *all 13 rules***, regardless of any earlier `Fail` results.
+4.  **Output Format for Part A:** Present this analysis clearly for each rule:
+    ```plaintext
+    ---
+    ### [Rule Number]. [Rule Name e.g., Culture/Company]
+    **Extracted Information:** [Relevant data from Phase 1]
+    **Rule #:** [Rule Number]
+    **Status:** [Pass/Fail]
+    **Reasoning:** [Concise explanation with evidence/quotes if needed]
+    ---
+    ```
+
+**Michael's Rules (Failure Conditions):**
+
+1.  **Culture/Company:** Fails if JD language suggests a toxic, overly bureaucratic, or technologically stagnant environment.
+2.  **Opportunity Type:** `[Critical Rule Check]` Fails if not Cybersecurity, Technical Support, or IT Systems Administration.
+3.  **Location:** `[Critical Rule Check]` Fails if only Onsite/Hybrid without a Remote option. Fails if "Not Specified".
+4.  **Employment Type:** `[Critical Rule Check]` Fails if Part-time, Contract, or Temporary. Fails if "Not Specified".
+5.  **Residency:** Fails if stated requirements explicitly exclude Watervliet, NY, USA, **OR** if the JD states that sponsorship for work authorization is not available. Assumes `Pass` if "Not Specified".
+6.  **Security Clearance:** Fails if Required *prior to hire*, is *not* Public Trust, *and* post-hire obtainment is not mentioned. Assumes `Pass` if "None" or "Not Specified".
+7.  **Travel:** Fails if specified `Travel Percentage` definitively exceeds 10% annually. Assumes `Pass` if "Not Specified" or ≤10%.
+8.  **Salary:** Fails if the **UPPER BOUND** of the specified or estimated `Salary Information` range is *less than* $110,000 USD annually. The check **MUST** be against the highest possible salary listed, not the lowest.
+9.  **Experience:** Fails if the JD explicitly requires **five (5) or more** years of experience in a specialized Cybersecurity/InfoSec role (e.g., "5+ years in incident response," "minimum 5 years as a security engineer").
+10. **Degree:** Fails if a Masters/PhD or a STEM degree is *required* without explicitly accepting equivalent work experience. Assumes `Pass` if experience equivalence is allowed.
+11. **Certifications:** Fails if `Certification Requirements` are `Required prior to hire` (for any cert other than A+/ACMT) *and* the JD *does not* state they can be obtained post-hire. Assumes `Pass` if "None", "Not Specified", "Preferred", or if post-hire obtainment is allowed.
+12. **Responsibilities Alignment:** `[Critical Rule Check]` Fails if `Core Responsibilities` are not highly aligned with Michael's background. Fails if "Not Specified".
+13. **Technical Skills Alignment:** `[Critical Rule Check]` Fails if `Required Technical Skills` are not highly aligned with Michael's skillset. Fails if "Not Specified".
+
+**Part B: Final Summary Report**
+
+After completing the detailed analysis in Part A, present the following summary sections in JSON format:
+
+Output format should be a JSON array of objects. Each object should have the following structure:
+{
+ "jobTitle": "Original Job Title",
+ "isVeryHighlyAligned": true | false,
+ "rationale": "Explanation based on the criteria and the resume.",
+ "confidence": 0.95
+}
+
+Ensure that the 'confidence' value is a number between 0.0 and 1.0, and the 'isVeryHighlyAligned' value is a boolean (true or false). Do not include any introductory or concluding text outside the JSON array.
+
+Thank you!
+
+**Begin Analysis.**
+
+## INPUTS
+
+``` Job Description - targJD
+{targJD}
+```
+
+``` My Resume - myResume
+{myResume}
+```
+
+``` My Testimonials - myTestimonials
+{myTestimonials}
+```

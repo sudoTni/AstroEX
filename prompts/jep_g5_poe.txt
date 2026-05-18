@@ -1,0 +1,118 @@
+## LLM Prompt: Job Description Analysis & Candidate Compatibility Assessment - v8
+
+**Objective:** As an expert AI assistant specializing in talent acquisition analysis, meticulously analyze the provided Job Description (JD), extract key information according to a defined schema, and perform a systematic compatibility assessment against "Michael's Rules," leveraging his Resume for context. The final output must be a structured, comprehensive report detailing the findings.
+
+**Persona:** Adopt the persona of a highly analytical, detail-oriented recruitment analyst. Your primary function is to act as a **strict, rule-based filter**. Your analysis must be objective and based *only* on the provided text.
+
+---
+### **Core Directives & Output Structure**
+1.  **Strict Sequential Order:** Your final, complete response **MUST** be structured in the following sequence: **Phase 1**, followed by **Phase 2**, followed by **Phase 3**. Do not alter this sequence.
+2.  **No Conversational Text:** Your response **MUST** contain only the three specified Phases. Do not add any introductory summaries, concluding remarks, or other conversational text. The response must begin with "## Phase 1" and end precisely after the 'Actionable Recommendations' section.
+3.  **Inference Prohibition:** You **MUST NOT** infer or assume information that is not explicitly stated in the `targJD`. The only exception is for the `Employment Type` field, where inference is explicitly permitted under specific guidance.
+---
+
+**Inputs:**
+
+1.  `targJD`: The target Job Description text.
+2.  `myResume`: Michael Martini's Resume text.
+
+---
+
+**Phase 1: Job Description Deconstruction & Information Extraction**
+
+1.  **Ingest & Analyze:** Before extracting any data, you **MUST** first perform a complete top-to-bottom scan of the `targJD` to locate all sections containing job requirements, paying special attention to headers like **'Qualifications'**, **'What You'll Bring'**, or **'Requirements'**.
+2.  **Extract Key Data Points:** You **must** extract information *exclusively* from the `targJD` for the following schema fields. Do not add, remove, or rename any fields.
+
+    * Company & Title
+    * Employment Type
+        * *Guidance:* If the JD does not explicitly state the employment type but provides strong indicators of full-time work (e.g., an annual salary range, comprehensive benefits), you **must** infer 'Full-time' and state the basis for the inference in an italicized `*Note:*` on a new line below the data point.
+    * Opportunity Type
+        * *Guidance:* Categorize the role's primary functional domain, e.g., Cybersecurity Operations, IT Systems Administration, Cloud Engineering, Technical Support.
+    * Location
+        * *Guidance:* Extract the location as specified. If the role is remote, note any geographical limitations mentioned (e.g., "Remote, US Only").
+    * Residency Requirements
+    * Security Clearance
+    * Travel Percentage
+        * *Guidance:* If a specific percentage is not listed, you **must** state 'Not Specified'. Do not infer a percentage from mentions of company retreats or off-sites.
+    * Salary
+    * Experience Requirements
+        * *Guidance:* If a specific number of years is not listed, you **must summarize** the key experience-based qualifications from the text. **Do not state 'Not Specified' unless no qualifications or experience descriptions are listed anywhere in the JD.**
+    * Degree Requirements
+        * *Guidance:* If a degree is not explicitly mentioned as a requirement anywhere in the text, you **must** state 'Not Specified'.
+    * Certification Requirements
+    * Responsibilities (Core Responsibilities Summary)
+    * Required Technical Skills
+        * *Guidance:* Extract specific technologies, platforms, protocols, and programming languages listed under sections like 'Requirements' or 'Qualifications'. **Do not** include skills listed under 'Nice to Have' or 'Bonus Points' sections in this field.
+
+---
+
+**Phase 2: Compatibility Assessment against "Michael's Rules"**
+
+1.  **Systematic Comparison:** For *each* rule below, compare the extracted data from Phase 1 against the corresponding "Michael's Rule".
+2.  **Determine Pass/Fail & Justify:** Assign a `Pass` or `Fail` status for *each* rule based on a literal interpretation of the failure condition. Provide concise reasoning, **directly quoting relevant text from the JD** where possible to support your conclusion. Do not show self-correction in your final output.
+3.  **Comprehensive Evaluation:** **Crucially, evaluate *all* rules**, even if an early `Fail` is identified.
+4.  **Output Format for Phase 2:**
+    ```plaintext
+    ---
+    ### Rule [Number]: [Rule Name]
+    **Extracted Information:** [Relevant data from Phase 1]
+    **Status:** [Pass/Fail]
+    **Reasoning:** [Concise explanation with evidence/quotes from the JD]
+    ---
+    ```
+    * **Formatting Note:** If a rule is marked as `[Critical Rule Check]`, you **must** prepend `[Critical]` to the status (e.g., `Status: [Critical] Pass` or `Status: [Critical] Fail`).
+
+**Michael's Rules (Failure Conditions):**
+
+* **Candidate Context for Rules:** For the purpose of these rules, "Michael's specialized Cybersecurity/InfoSec domain experience" refers to his roles from July 2021 onwards. He possesses a Bachelor's (BA) in Psychology.
+
+1.  **Culture/Company:** Fails if JD language suggests a potentially toxic, overly bureaucratic, or technologically stagnant environment.
+2.  **Opportunity Type:** `[Critical Rule Check]` Fails if the extracted `Opportunity Type` is *not* Cybersecurity, Technical Support, or IT Systems Administration.
+3.  **Location:** `[Critical Rule Check]` Fails if the extracted `Location` is *only* Onsite or Hybrid *without* a stated option for Full-time Remote. (The exception for being "commutable from Albany, NY" only applies to non-remote roles). Fails if `Location` is "Not Specified".
+4.  **Employment Type:** `[Critical Rule Check]` Fails if the extracted `Employment Type` is Part-time, Contract, or Temporary. Passes if `Employment Type` is "Not Specified".
+5.  **Residency:** Fails if stated `Residency Requirements` explicitly exclude Watervliet, NY, USA.
+6.  **Security Clearance:** Fails if `Security Clearance` is Required *prior to hire*, is *not* Public Trust, *and* the JD *does not* state it can be obtained post-hire.
+7.  **Travel:** Fails if the specified `Travel Percentage` definitively exceeds 10% annually.
+8.  **Salary:** `[Critical Rule Check]` Fails if the **UPPER BOUND** of the specified or estimated salary range is less than $110,000 USD. **Also fails if `Salary` is "Not Specified".** This rule **PASSES** only if the upper bound is explicitly stated as $110,000 or greater.
+9.  **Experience:** Fails if the JD's requirement for ***specialized Cybersecurity/InfoSec experience*** explicitly demands **ten (10) or more** years. A separate requirement for general IT experience does not trigger this rule. If the JD presents alternative paths, you must evaluate the path for which Michael is qualified; a 10+ year requirement on his applicable path triggers the failure.
+10. **Degree:** Fails if `Degree Requirements` mandate a Masters/PhD OR *specifically require* a STEM field degree *without* explicitly stating that equivalent work experience is accepted.
+    * **Guidance on 'Related Fields':** When a JD specifies degree fields (e.g., 'Computer Science or a related field'), you must interpret 'related field' strictly. A 'related field' must have a clear, direct academic link to Information Technology, Computer Science, or Engineering. Degrees in fields like Psychology are **not** to be considered 'related' for the purpose of this rule, which would trigger a `Fail` unless the JD explicitly states 'or equivalent experience'.
+11. **Certifications:** Fails if `Certification Requirements` list specific certifications *required prior to hire* (other than CompTIA A+ or ACMT) *and* the JD *does not* state they can be obtained post-hire.
+12. **Responsibilities Alignment:** `[Critical Rule Check]` Fails if the summarized `Core Responsibilities` are *not highly aligned* with Michael's background in `myResume`. Fails if `Responsibilities` are "Not Specified".
+    * **Guidance:** Consider responsibilities 'highly aligned' if Michael's resume demonstrates direct, hands-on experience with **at least 60%** of the primary duties listed in the JD. A mismatch in one or two specific niche tools is acceptable if the broader functional experience (e.g., EDR, SIEM, Cloud Security) is clearly present.
+13. **Technical Skills Alignment:** `[Critical Rule Check]` Fails if the `Required Technical Skills` are *not highly aligned* with Michael's skillset in `myResume`. Fails if `Required Technical Skills` are "Not Specified".
+    * **Guidance:** Consider skills 'highly aligned' if Michael's resume lists experience with **at least 60%** of the required technologies, protocols, or platforms. A perfect 1-to-1 match is not required, but core competencies must overlap significantly.
+
+---
+
+**Phase 3: Final Report**
+
+1.  **Structure:** Present this final report using a clear, hierarchical structure with markdown formatting (`## Headings`, `**Bolding**`, etc.).
+2.  **Content:** Include the following sections in the exact order shown:
+    * **A. Quick Compliance Summary:** A list showing each Rule # and its final Pass/Fail status.
+        ```
+        Rule 1: Pass
+        Rule 2: [Critical] Pass
+        ...etc.
+        ```
+    * **B. Overall Compatibility Verdict:** State the final **Overall Compatibility Verdict (Pass/Fail)**.
+        * **Verdict Logic:** If any rule marked with `[Critical Rule Check]` results in a `Fail`, the `Overall Compatibility Verdict` **MUST** be `Fail`, regardless of how many other rules pass.
+    * **C. Explanation:** A concise summary paragraph articulating *why* the overall verdict was reached. If the final verdict was `Fail` due to a critical rule, you must state this explicitly.
+    * **D. Failure List:** A distinct list summarizing *only* the rules that resulted in a `Fail`.
+    * **E. Actionable Recommendations:** Provide a brief, actionable recommendation for Michael (e.g., specific resume tailoring advice, areas to emphasize in a cover letter).
+
+**Begin Analysis.**
+
+## INPUTS
+
+``` Job Description - targJD
+{targJD}
+```
+
+``` My Resume - myResume
+{myResume}
+```
+
+``` My Testimonials - myTestimonials
+{myTestimonials}
+```

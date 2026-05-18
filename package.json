@@ -1,0 +1,54 @@
+{
+	"name": "astroex",
+	"version": "3.5.0",
+	"description": "Enterprise-grade LinkedIn job processing pipeline with dynamic pagination, anti-bot jitter delays, exponential backoff retry mechanisms, stream processing for memory efficiency, completely overhauled statistics framework, improved logging clarity, singleton pattern optimization, comprehensive CLI configuration options, and 100% backwards compatibility",
+	"type": "commonjs",
+	"main": "src/index.ts",
+	"scripts": {
+		"build": "tsc",
+		"start": "ts-node src/index.ts",
+		"start:debug": "ts-node src/index.ts --headless false",
+		"clean:data": "rimraf ./data",
+		"scrape:search": "ts-node src/index.ts scrape-search",
+		"scrape:job": "ts-node src/index.ts scrape-job",
+		"scrape:jobs": "ts-node src/index.ts scrape-jobs",
+		"process": "ts-node src/index.ts processData",
+		"job:cloth": "ts-node src/index.ts jobCloth",
+		"job:judge": "ts-node src/index.ts jobJudge",
+		"makeMaterials": "ts-node src/index.ts makeMaterials",
+		"modes:er44zz": "ts-node src/index.ts --help",
+		"lint": "rm -rf dist && biome check .",
+		"lint:fix": "rm -rf dist && biome check --fix .",
+		"format": "rm -rf dist && biome format --write .",
+		"format:check": "rm -rf dist && biome format ."
+	},
+	"author": "tjenkel",
+	"contributors": [
+		{
+			"name": "llpujol",
+			"url": "https://github.com/llpujol"
+		}
+	],
+	"license": "MIT",
+	"dependencies": {
+		"@types/puppeteer": "^2.0.1",
+		"@types/yargs": "^15.0.9",
+		"chalk": "^4.1.0",
+		"openai": "^5.0.0-beta.0",
+		"prettier": "^3.6.2",
+		"puppeteer": "^22.8.2",
+		"rimraf": "^5.0.1",
+		"rxjs": "^6.5.5",
+		"tiktoken": "^1.0.21",
+		"yargs": "^16.1.0",
+		"zod": "^3.24.3"
+	},
+	"engines": {
+		"node": ">=12.0.0"
+	},
+	"devDependencies": {
+		"@biomejs/biome": "^2.0.0",
+		"ts-node": "^10.9.2",
+		"typescript": "^5.8.3"
+	}
+}

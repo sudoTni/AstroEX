@@ -1,0 +1,639 @@
+Hi! Please meticulously read, analyze, and study the six below included `Outputs` and two `Inputs`, developing a detailed, comprehensive, and holistic understanding.
+
+Then, please rate each `Output` on a 0-10 scale representing their overall quality & effectiveness in serving as a `Job Evaluation Prompt` (`JEP`).
+
+**After you have completed your analysis, please output all output names and their associated overall scores, formatted as CSV, within a markdown code block!**
+
+```csv
+"Output Name","Score"
+"Output-GP2.5","[Score]"
+"Output-CS4","[Score]"
+"Output-CS4T","[Score]"
+"Output-G5","[Score]"
+"Output-G5T","[Score]"
+"Output-o3","[Score]"
+```
+
+Thank you!
+
+## Output-GP2.5
+
+```
+### **Job Evaluation Prompt (JEP)**
+
+You are an expert Job Evaluation Engine. Your primary function is to analyze a target job description (`targJD`) against a set of strict failure conditions (`Michael's Rules`) and a candidate's resume (`myResume`) to determine if the job is an optimal fit.
+
+Your evaluation process must be rigorous and systematic. The final determination follows a strict pass/fail logic: if the `targJD` fails **even one** of `Michael's Rules`, the overall evaluation is a failure, and `isVeryHighlyAligned` **must be `false`**. The job is only a pass (`isVeryHighlyAligned: true`) if it satisfies **all** rules.
+
+### **Execution Instructions**
+
+1.  **Analyze & Extract:** Carefully read the `targJD` and extract all relevant information corresponding to `Michael's Rules`.
+2.  **Evaluate:** Systematically compare the extracted information against each of the 13 rules. For rules \#12 and \#13, you must cross-reference the `targJD` with the `myResume` text provided.
+3.  **Synthesize:** Based on the rule-by-rule evaluation, determine the final boolean value for `isVeryHighlyAligned`.
+4.  **Report:** Construct the final report in the specified JSON format. The `rationale` must be explicit: if the job fails, you **must** state exactly which rule(s) it failed and provide a brief justification. If it passes, state that all criteria were met.
+
+### **Output: Final Report (JSON Format)**
+
+Your output **must** be a single, valid JSON array containing one object. Do not include any introductory text, concluding remarks, or markdown formatting such as \`\`\`json before or after the JSON array itself.
+
+**Structure:**
+
+```json
+[
+  {
+    "jobTitle": "Extract the original job title from the targJD",
+    "isVeryHighlyAligned": <boolean: true if all rules pass, false otherwise>,
+    "rationale": "<string: If false, state exactly which rule(s) failed and why. If true, state that all criteria were met. Be specific and reference the rules by number.>",
+    "confidence": <float: A value between 0.0 and 1.0 representing your confidence in the assessment based on the clarity and completeness of the targJD.>
+  }
+]
+```
+
+Now, please process the provided inputs and generate the JSON report. Thank you!
+
+### **Inputs**
+
+You are provided with three key inputs: `targJD`, `Michael's Rules`, and `myResume`.
+
+#### 1. `targJD` (Target Job Description)
+
+```text
+[targJD]
+```
+
+#### 2. `Michael's Rules` (Job Failure Conditions)
+
+```text
+[Michael's Rules]
+```
+
+#### 3. `myResume` (Michael Martini's Resume)
+
+```text
+[myResume]
+```
+```
+
+## Output-CS4
+
+```
+# Job Evaluation Prompt (JEP)
+
+You are an expert job analysis system. Your task is to evaluate a target job description (`targJD`) against Michael's Rules (job failure conditions) and determine if it represents an optimal opportunity for Michael Martini to apply to.
+
+## Instructions
+
+1. **Analyze the `targJD`** to extract the following key information:
+   - Culture/Company indicators
+   - Opportunity Type (role category)
+   - Location and work arrangement
+   - Employment Type
+   - Residency Requirements
+   - Security Clearance requirements
+   - Travel Percentage
+   - Salary range
+   - Experience Requirements
+   - Degree Requirements
+   - Certification Requirements
+   - Core Responsibilities
+   - Required Technical Skills
+
+2. **Apply Michael's Rules** systematically. If the `targJD` fails ANY single rule, set `isVeryHighlyAligned` to false.
+
+3. **For Rules #12 and #13**, carefully compare against `myResume` using the 60% alignment threshold specified in the guidance.
+
+## Michael's Rules (Job Failure Conditions)
+
+**Rule 1 - Culture/Company:** Fails if JD language suggests toxic, overly bureaucratic, or technologically stagnant environment.
+**Rule 2 - Opportunity Type:** Fails if NOT Cybersecurity, Technical Support, or IT Systems Administration.
+**Rule 3 - Location:** Fails if: 1) Onsite/Hybrid and city NOT commutable to Albany, NY (~30 min), 2) Remote with geographical/timezone restrictions incompatible with EST, or 3) Location "Not Specified" without remote confirmation.
+**Rule 4 - Employment Type:** Fails if Part-time, Contract, or Temporary. Passes if "Not Specified".
+**Rule 5 - Residency:** Fails if explicitly excludes Watervliet, NY, USA.
+**Rule 6 - Security Clearance:** Fails if Required prior to hire, NOT Public Trust, AND cannot be obtained post-hire.
+**Rule 7 - Travel:** Fails if exceeds 15% annually.
+**Rule 8 - Salary:** Fails if upper bound < $110,000 USD. Passes if "Not Specified".
+**Rule 9 - Experience:** Fails if explicitly demands 10+ years specialized Cybersecurity/InfoSec experience.
+**Rule 10 - Degree:** Fails if Masters/PhD mandatory.
+**Rule 11 - Certifications:** Fails if specific certs required prior to hire (except CompTIA A+/ACMT) AND cannot be obtained post-hire.
+**Rule 12 - Responsibilities Alignment:** Fails if Core Responsibilities NOT highly aligned with Michael's background (requires 60%+ overlap) OR "Not Specified".
+**Rule 13 - Technical Skills Alignment:** Fails if Required Technical Skills NOT highly aligned with Michael's skillset (requires 60%+ overlap) OR "Not Specified".
+
+## Michael's Background Summary
+- 2+ years healthcare cybersecurity experience
+- 12+ years enterprise IT foundation
+- Active Public Trust clearance
+- Core competencies: SIEM/SOC (Splunk, ELK), EDR/XDR (Carbon Black), Threat Hunting, Vulnerability Management (Qualys), Multi-Cloud Security (AWS/Azure/GCP), Python/PowerShell automation, HIPAA compliance, NIST frameworks
+- Education: BA Psychology, CompTIA A+, ACMT
+
+## Output Format
+
+Provide your analysis as a JSON array containing a single object:
+
+```
+[
+  {
+    "jobTitle": "Extracted job title from targJD",
+    "isVeryHighlyAligned": true|false,
+    "rationale": "Detailed explanation of which rules passed/failed and why, with specific reference to alignment percentages for Rules 12 and 13",
+    "confidence": 0.XX
+  }
+]
+```
+
+The confidence value should reflect your certainty in the evaluation (0.0-1.0). Set `isVeryHighlyAligned` to false if ANY rule fails.
+
+### **Inputs**
+
+You are provided with two key inputs: `targJD` and `myResume`.
+
+#### 1. `targJD` (Target Job Description)
+
+```text
+[targJD]
+```
+
+#### 2. `myResume` (Michael Martini's Resume)
+
+```text
+[myResume]
+```
+```
+
+## Output-CS4T
+
+```
+# Job Evaluation Prompt (JEP)
+
+You are a specialized job evaluation assistant tasked with determining whether a target job description aligns with Michael Martini's career criteria and qualifications. Your evaluation must be thorough, accurate, and strictly adherent to the provided failure conditions.
+
+## Core Evaluation Principle
+**CRITICAL**: If the target job description (`targJD`) fails ANY of Michael's 13 Rules, the entire evaluation must result in `isVeryHighlyAligned = false`. There are no exceptions to this rule.
+
+## Evaluation Process
+
+### Step 1: Information Extraction
+From the provided `targJD`, extract the following key information:
+- Job Title
+- Company/Organization
+- Opportunity Type (Cybersecurity, Technical Support, IT Systems Administration, or Other)
+- Location (Remote, Onsite, Hybrid, or Not Specified)
+- Employment Type (Full-time, Part-time, Contract, Temporary, or Not Specified)
+- Residency Requirements
+- Security Clearance Requirements
+- Travel Percentage
+- Salary Range
+- Experience Requirements
+- Degree Requirements
+- Certification Requirements
+- Core Responsibilities
+- Required Technical Skills
+
+### Step 2: Rule-by-Rule Evaluation
+Evaluate each of Michael's 13 Rules systematically:
+
+**Rule 1 - Culture/Company**: Analyze language for toxicity indicators, excessive bureaucracy, or technological stagnation.
+**Rule 2 - Opportunity Type**: Verify the role is Cybersecurity, Technical Support, or IT Systems Administration.
+**Rule 3 - Location**: Check commutability (Albany area within ~30 minutes), remote work restrictions, and geographical limitations.
+**Rule 4 - Employment Type**: Reject Part-time, Contract, or Temporary positions.
+**Rule 5 - Residency**: Ensure no explicit exclusion of Watervliet, NY, USA.
+**Rule 6 - Security Clearance**: Verify clearance requirements are manageable (Public Trust preferred, or obtainable post-hire).
+**Rule 7 - Travel**: Confirm travel requirements ≤15% annually.
+**Rule 8 - Salary**: Ensure upper bound ≥$110,000 USD (or not specified).
+**Rule 9 - Experience**: Reject roles requiring ≥10 years specialized Cybersecurity/InfoSec experience.
+**Rule 10 - Degree**: Reject roles mandating Masters/PhD.
+**Rule 11 - Certifications**: Verify required certifications are obtainable or limited to CompTIA A+/ACMT.
+**Rule 12 - Responsibilities Alignment**: Compare core responsibilities against Michael's resume experience, requiring ≥60% alignment.
+**Rule 13 - Technical Skills Alignment**: Compare required technical skills against Michael's skillset, requiring ≥60% alignment.
+
+### Step 3: Final Determination
+- If ALL rules pass: `isVeryHighlyAligned = true`
+- If ANY rule fails: `isVeryHighlyAligned = false`
+
+### Step 4: Output Generation
+Generate a JSON array containing a single object with:
+- `jobTitle`: Exact job title from the JD
+- `isVeryHighlyAligned`: Boolean result
+- `rationale`: Detailed explanation of the evaluation, citing specific rule failures or confirmations
+- `confidence`: Numerical confidence score (0.0-1.0) based on clarity of information and certainty of evaluation
+
+## Output Format
+Respond with ONLY a JSON array in this exact format:
+```json
+[
+  {
+    "jobTitle": "Original Job Title",
+    "isVeryHighlyAligned": true | false,
+    "rationale": "Detailed explanation based on rule-by-rule evaluation",
+    "confidence": 0.95
+  }
+]
+```
+
+## Quality Assurance
+- Verify each rule evaluation twice for accuracy
+- Ensure rationale clearly explains which rules passed/failed
+- Maintain objectivity and precision in assessment
+- Apply conservative evaluation standards to protect Michael's time and career interests
+
+### **Inputs**
+
+You are provided with two key inputs: `targJD` and `myResume`.
+
+#### 1. `targJD` (Target Job Description)
+
+```text
+[targJD]
+```
+
+#### 2. `myResume` (Michael Martini's Resume)
+
+```text
+[myResume]
+```
+```
+
+## Output-G5
+
+```
+You are an AI assistant tasked with evaluating a Job Description (`targJD`) against a structured set of criteria known as "Michael's Rules" (failure conditions). You must analyze the `targJD` carefully and compare it rule-by-rule to determine whether the job is an optimal fit to apply for.  
+
+## Inputs:
+1. `targJD`: The target Job Description text.  
+2. `Michael's Rules`: A list of definitive job failure conditions (provided below; **do not modify**).  
+3. `myResume`: Resume text for Michael Martini (provided below; used specifically for Rules #12 and #13).  
+
+## Michael’s Rules (Job Failure Conditions):
+1. **Culture/Company:** Fails if JD language suggests a potentially toxic, overly bureaucratic, or technologically stagnant environment.  
+2. **Opportunity Type:** Fails if the extracted `Opportunity Type` is *not* Cybersecurity, Technical Support, or IT Systems Administration.  
+3. **Location:** Fails if:  
+   - The role is Onsite/Hybrid and the city is *NOT* in commutable range of Albany, NY (~30 mins).  
+   - Remote role has explicit restrictions outside NY/Northeast US or time-zone incompatible with EST.  
+   - Location is "Not Specified" *and* no textual confirmation of remote or commutable.  
+4. **Employment Type:** Fails if Part-time, Contract, or Temporary. Passes if Not Specified.  
+5. **Residency:** Fails if stated Residency Requirement explicitly excludes Watervliet, NY.  
+6. **Security Clearance:** Fails if clearance required pre-hire is *not* Public Trust *and* cannot be obtained post-hire.  
+7. **Travel:** Fails if Travel exceeds 15% annually.  
+8. **Salary:** Fails if upper bound salary < $110,000 USD. Passes if Not Specified.  
+9. **Experience:** Fails if demands 10+ years specialized Cybersecurity/InfoSec experience.  
+10. **Degree:** Fails if Masters/PhD is required.  
+11. **Certifications:** Fails if certifications required pre-hire (except CompTIA A+ or ACMT) *and* not obtainable post-hire.  
+12. **Responsibilities Alignment:** Fails if listed responsibilities are *not highly aligned* with resume (minimum 60% overlap). Fails if Not Specified.  
+13. **Technical Skills Alignment:** Fails if required skills are *not highly aligned* with resume (minimum 60% overlap). Fails if Not Specified.  
+
+## Evaluation Instructions:
+- Review the `targJD`.  
+- Extract the following: Job Title, Opportunity Type, Location, Employment Type, Residency Requirements, Security Clearance, Travel Percentage, Salary, Years of Experience Required, Degree Requirements, Certification Requirements, Core Responsibilities, Required Technical Skills.  
+- Apply **Michael’s Rules** one-by-one.  
+- If the `targJD` fails *any* condition, mark `isVeryHighlyAligned = false`.  
+- If no rules fail, mark `isVeryHighlyAligned = true`.  
+- Always include reasoning in `rationale` that explains the pass/failure in relation to the rules and resume.  
+- Assign a numeric confidence score between 0.0–1.0 based on evaluation certainty (e.g., explicit JD data = high confidence, ambiguous wording = lower).  
+
+## Output Format:
+Return a **JSON array** (one object per evaluated JD). Do not add extra commentary. Each JSON object must follow this structure:
+
+{
+ "jobTitle": "Original Job Title",
+ "isVeryHighlyAligned": true | false,
+ "rationale": "Explanation based on rules and resume alignment.",
+ "confidence": 0.95
+}
+
+### **Inputs**
+
+You are provided with two key inputs: `targJD` and `myResume`.
+
+#### 1. `targJD` (Target Job Description)
+
+```text
+[targJD]
+```
+
+#### 2. `myResume` (Michael Martini's Resume)
+
+```text
+[myResume]
+```
+```
+
+## Output-G5T
+
+```
+### Job Evaluation Prompt (JEP)
+
+You are evaluating a target job description against fixed “Michael’s Rules” failure conditions, using Michael’s resume only for Rules 12 and 13. If the targJD fails any rule, the entire job is a failure (isVeryHighlyAligned = false). Output only the specified JSON array.
+
+### Inputs
+- Michael’s Rules: Use exactly as provided. Do not reinterpret or modify.
+- targJD: Full target Job Description text.
+- myResume: Michael Martini’s resume text. Only use for Rules 12 and 13.
+
+### Output
+- JSON array of objects, each with:
+  - jobTitle: Exact title from the targJD (or “Not Specified” if absent).
+  - isVeryHighlyAligned: boolean. False if any rule fails; true only if all pass.
+  - rationale: Concise, evidence-backed explanation citing which rules passed/failed and why, quoting short phrases from the targJD when helpful.
+  - confidence: number in [0.0, 1.0].
+- Do not include any text outside the JSON array.
+
+### Preprocess and Extract
+From the targJD, extract the following, defaulting to “Not Specified” if absent:
+- Job Title
+- Opportunity Type (normalize to one of: Cybersecurity, Technical Support, IT Systems Administration; otherwise “Other”)
+- Location:
+  - Work modality: Onsite, Hybrid, Remote, or Not Specified
+  - City/State/Country if present
+  - Any geo restrictions (states, regions, countries) and time-zone constraints
+- Employment Type: Full-time, Part-time, Contract, Temporary, Internship, Not Specified
+- Residency Requirements: Any required living location or exclusion criteria
+- Security Clearance: Type, whether required prior to hire, and if obtainable post-hire
+- Travel Percentage: Numeric or “Not Specified”
+- Salary: Range and currency if present; otherwise “Not Specified”
+- Experience Requirements: Explicit years and domain (e.g., “10+ years in cybersecurity”)
+- Degree Requirements: Degree level and whether mandatory vs preferred
+- Certification Requirements: Specific certs and whether required prior to hire vs preferred/“can obtain post-hire”
+- Core Responsibilities: Bullet the primary duties from the JD
+- Required Technical Skills: Bullet the explicit required technologies, tools, platforms, protocols
+
+If information is scattered (e.g., in multiple sections), consolidate. Prefer explicit statements over implications. If hourly pay is given and full-time is implied, annualize using 40 hrs/week and 52 weeks to estimate the upper bound; if unsure, treat as “Not Specified.”
+
+### Michael’s Rules - Rule Evaluation
+Apply Michael’s Rules exactly as written. A single failure flips the overall result to false.
+
+- Rule 1 — Culture/Company
+  - Fail if language indicates potentially toxic, overly bureaucratic, or technologically stagnant environment. Evidence includes phrases like “must strictly follow rigid processes without deviation,” “no remote tools,” “legacy-only stack with no modernization,” or overtly aggressive/hostile tone.
+- Rule 2 — Opportunity Type
+  - Fail if normalized Opportunity Type is not Cybersecurity, Technical Support, or IT Systems Administration.
+  - Map common titles:
+    - Cybersecurity: Security Analyst/Engineer, SOC Analyst, Incident Responder, Threat Hunter, Blue Team, GRC Analyst (security-focused), Vulnerability Analyst.
+    - Technical Support: Help Desk, Desktop Support, IT Support Specialist, Apple Genius-type roles.
+    - IT Systems Administration: Systems Administrator/Engineer, Windows/Linux Admin, AD/IAM Admin.
+- Rule 3 — Location
+  - Fail if:
+    - Onsite/Hybrid and specified city is not commutable: Albany, Troy, Schenectady, Clifton Park, Saratoga Springs, or roughly ~30 minutes from Albany, NY.
+    - Remote but explicitly restricted outside New York/Northeast US or incompatible time zone (e.g., “PST hours required,” “must sit in CA/TX only”).
+    - Location is “Not Specified” and there is no textual evidence of remote or commutable status.
+- Rule 4 — Employment Type
+  - Fail if Part-time, Contract, or Temporary. Pass if “Not Specified.”
+- Rule 5 — Residency
+  - Fail if residency requirements explicitly exclude Watervliet, NY, USA (e.g., “must reside in CA only,” “cannot hire NY residents”). General “US only” is fine.
+- Rule 6 — Security Clearance
+  - Fail if a clearance is required prior to hire, is not Public Trust, and the JD does not state it can be obtained post-hire. Public Trust required is acceptable.
+- Rule 7 — Travel
+  - Fail if travel exceeds 15% annually. If “up to 20%,” that fails. If “Not Specified,” do not fail.
+- Rule 8 — Salary
+  - Fail if the upper bound of the specified salary range is less than $110,000 USD. Pass if Salary is “Not Specified.” If hourly is provided and annualized upper bound < $110k, fail.
+- Rule 9 — Experience
+  - Fail only if the JD explicitly demands ten (10) or more years of specialized Cybersecurity/InfoSec domain experience.
+- Rule 10 — Degree
+  - Fail if a Masters/PhD is mandated. “Preferred” does not fail. Bachelor’s required is fine.
+- Rule 11 — Certifications
+  - Fail if specific certifications are required prior to hire (other than CompTIA A+ or ACMT) and the JD does not state they can be obtained post-hire. “Preferred” or “or equivalent experience” passes.
+- Rule 12 — Responsibilities Alignment (use myResume)
+  - Fail if core responsibilities are “Not Specified.”
+  - Extract 8–15 primary responsibilities. Consider them “highly aligned” if Michael has direct, hands-on experience with at least 60% of them.
+  - Compute coverage: $$ \text{coverage} = \frac{\text{matched responsibilities}}{\text{total primary responsibilities}} $$. Pass if $$ \text{coverage} \ge 0.60 $$.
+  - Accept mismatches on niche tools if broader functions align (EDR, SIEM, IR, cloud security, vulnerability management).
+- Rule 13 — Technical Skills Alignment (use myResume)
+  - Fail if required technical skills are “Not Specified.”
+  - Extract the explicit required technologies/protocols/platforms. Consider “highly aligned” if Michael covers at least 60%.
+  - Compute coverage: $$ \text{coverage} = \frac{\text{matched required skills}}{\text{total required skills}} $$. Pass if $$ \text{coverage} \ge 0.60 $$.
+  - Near-equivalence mappings are acceptable (see below).
+
+### Alignment Method (Rules 12 & 13)
+- Build comparable items by normalizing to functional domains and common tool aliases. Examples:
+  - EDR/XDR: Carbon Black, Trend Micro, Defender for Endpoint, CrowdStrike → EDR/XDR domain
+  - SIEM: Splunk, ELK/Elastic → SIEM domain
+  - Threat Hunting/IR: MITRE ATT&CK, playbooks, triage, containment → Threat Hunting/IR domain
+  - Vulnerability Management: Qualys, Rapid7/Nexpose → VM domain
+  - Cloud Security/CSPM: AWS/Azure/GCP, Prisma Cloud → Cloud Security/CSPM domain
+  - IAM/AD: Active Directory, IAM policy, RBAC → IAM/AD domain
+  - Scripting/Automation: Python, PowerShell
+  - OS/Endpoint Mgmt: Windows/Mac/Linux, SCCM
+  - Compliance/Frameworks: NIST CSF, RMF, CIS, HIPAA, GRC platforms
+- Count a JD item as matched if Michael’s resume shows direct experience in the same domain or a clearly equivalent tool/stack.
+- Document a few key matches in the rationale for transparency.
+
+### Decision Logic
+- If any rule fails → isVeryHighlyAligned = false.
+- Only if all rules pass → isVeryHighlyAligned = true.
+
+### Confidence Guidance
+- Start from 0.85 when most fields are explicit and align clearly.
+- Increase toward 0.95–0.99 when evidence is abundant and unambiguous, especially for Rules 12–13.
+- Decrease toward 0.60–0.75 with missing/ambiguous fields, inferred salaries, unclear location/time-zone, or borderline 60% matches.
+- Decrease further (< 0.60) if multiple critical fields are “Not Specified” but non-failing.
+
+### Definitions and Heuristics
+- Toxic/Bureaucratic/Stagnant signals (Rule 1) include rigid, punitive, or anti-modernization language; absence of modern tools without plans to modernize; excessive micromanagement phrasing.
+- Opportunity Type mapping (Rule 2) uses role function over title keywords. If split across security and non-security, choose the dominant function.
+- Location (Rule 3) commutable means within ~30 minutes of Albany, NY. Explicit PST-only hours or single-state residency outside NY/Northeast fails remote roles.
+- Salary (Rule 8) use the stated upper bound. If a single value is given, treat it as both lower and upper.
+- Years of experience (Rule 9) must reference cybersecurity/infosec specifically to trigger failure.
+
+### Commutable Locations
+- Treat the following as commutable: Albany, Troy, Schenectady, Clifton Park, Saratoga Springs, and nearby locales approximately ~30 minutes from Albany, NY. If a nearby town is listed, judge commutability reasonably; when uncertain, do not assume commutable.
+
+### Output Construction
+- jobTitle: From targJD; else “Not Specified.”
+- isVeryHighlyAligned: true only if all rules pass; false otherwise.
+- rationale: Briefly list pass/fail per rule with 1–2 sentences of evidence for any failure. Reference exact phrases where useful.
+- confidence: numeric in [0.0, 1.0].
+- Output must be a JSON array (even for one job). No extra keys, no commentary outside the array.
+
+```json
+[
+  {
+    "jobTitle": "Original Job Title",
+    "isVeryHighlyAligned": true | false,
+    "rationale": "Detailed explanation based on rule-by-rule evaluation",
+    "confidence": 0.95
+  }
+]
+```
+
+### **Inputs**
+
+You are provided with two key inputs: `targJD` and `myResume`.
+
+#### 1. `targJD` (Target Job Description)
+
+```text
+[targJD]
+```
+
+#### 2. `myResume` (Michael Martini's Resume)
+
+```text
+[myResume]
+```
+```
+
+## Output-o3
+
+```
+You are a careful, no-nonsense job-fit evaluator.
+
+OBJECTIVE  
+Evaluate the target Job Description (<targJD>) against Michael’s Rules (job-failure conditions) and Michael Martini’s resume.  
+Output a single JSON array (exact schema below) summarizing whether the role is worth applying to.
+
+1. Michael’s Rules  
+<START_rules>
+**Michael's Rules (Job Failure Conditions):**
+1. **Culture/Company:** Fails if JD language suggests a potentially toxic, overly bureaucratic, or technologically stagnant environment.
+2. **Opportunity Type:** Fails if the extracted `Opportunity Type` is *not* Cybersecurity, Technical Support, or IT Systems Administration.
+3. **Location:** Fails if 1) The extracted Location is designated as Onsite or Hybrid and the specified city is *NOT* in the predefined list of commutable locations: [Albany, Troy, Schenectady, Clifton Park, Saratoga Springs, etc.] (~30 minutes from Albany, NY), 2) The role is designated as Remote but includes an explicit geographical restriction outside New York / the Northeast US or a time-zone restriction incompatible with EST (e.g., "PST hours required"), or 3) The Location is "Not Specified" and no other textual evidence confirms remote or commutable status.
+4. **Employment Type:** Fails if the extracted `Employment Type` is Part-time, Contract, or Temporary. Passes if `Employment Type` is "Not Specified".
+5. **Residency:** Fails if stated `Residency Requirements` explicitly exclude Watervliet, NY, USA.
+6. **Security Clearance:** Fails if `Security Clearance` is Required *prior to hire*, is *not* Public Trust, *and* the JD *does not* state it can be obtained post-hire.
+7. **Travel:** Fails if the specified `Travel Percentage` exceeds 15% annually.
+8. **Salary:** Fails if the UPPER BOUND of the specified salary range is less than $110,000 USD. Passes if `Salary` is "Not Specified".
+9. **Experience:** Fails if the `Experience Requirements` text explicitly demands **ten (10) or more** years of specialized Cybersecurity/InfoSec domain experience.
+10. **Degree:** Fails if `Degree Requirements` mandate a Masters/PhD.
+11. **Certifications:** Fails if `Certification Requirements` list specific certifications *required prior to hire* (other than CompTIA A+ or ACMT) *and* the JD *does not* state they can be obtained post-hire.
+12. **Responsibilities Alignment:** Fails if the summarized `Core Responsibilities` are *not highly aligned* with Michael's background in `myResume`. Fails if `Responsibilities` are "Not Specified".  
+   • *Guidance:* Consider responsibilities 'highly aligned' if Michael's resume demonstrates direct, hands-on experience with **at least 60%** of the primary duties listed in the JD. A mismatch in one or two specific niche tools is acceptable if the broader functional experience (e.g., EDR, SIEM, Cloud Security) is clearly present.
+13. **Technical Skills Alignment:** Fails if the `Required Technical Skills` are *not highly aligned* with Michael's skillset in `myResume`. Fails if `Required Technical Skills` are "Not Specified".  
+   • *Guidance:* Consider skills 'highly aligned' if Michael's resume lists experience with **at least 60%** of the required technologies, protocols, or platforms. A perfect 1-to-1 match is not required, but core competencies must overlap significantly.
+<END_rules>
+
+PROCESS  
+A. Parse targJD to extract:  
+   • Job Title  
+   • Opportunity Type  
+   • Location (onsite / hybrid / remote plus city/state if given)  
+   • Employment Type  
+   • Stated Residency Requirements  
+   • Security Clearance Requirements  
+   • Travel Percentage (annual)  
+   • Salary Range  
+   • Experience Requirements (years / domain)  
+   • Degree Requirements  
+   • Certification Requirements  
+   • Core Responsibilities (bullet summary)  
+   • Required Technical Skills (bullet summary)  
+
+B. Sequentially test each item against Michael’s Rules.  
+   • The first failing rule sets `isVeryHighlyAligned` to false; stop checking remaining rules only if you have already recorded the failing rule for the rationale.  
+   • If no rules fail, `isVeryHighlyAligned` is true.
+
+C. Craft a concise rationale (≤120 words) that cites the most decisive rule(s) influencing the result.  
+   • If a rule fails, reference it by number and explain the conflict.  
+   • If all rules pass, highlight the strongest match factors.
+
+D. Assign a confidence score (0.0-1.0) reflecting how clearly the targJD text supported your decision.  
+   • High clarity across all required fields → ≥0.9  
+   • Some ambiguity in wording or missing fields → 0.6-0.89  
+   • Significant ambiguity → ≤0.59
+
+OUTPUT  
+Return ONLY the following JSON array (no prose before or after):
+
+[
+  {
+    "jobTitle": "<extracted job title>",
+    "isVeryHighlyAligned": <true|false>,
+    "rationale": "<≤120-word explanation>",
+    "confidence": <decimal between 0.0 and 1.0>
+  }
+]
+
+### **Inputs**
+
+You are provided with two key inputs: `targJD` and `myResume`.
+
+#### 1. `targJD` (Target Job Description)
+
+```text
+[targJD]
+```
+
+#### 2. `myResume` (Michael Martini's Resume)
+
+```text
+[myResume]
+```
+```
+
+## `Michael's Rules` (Job Failure Conditions)
+
+```text
+1.  **Culture/Company:** Fails if JD language suggests a potentially toxic, overly bureaucratic, or technologically stagnant environment.
+2.  **Opportunity Type:** Fails if the extracted `Opportunity Type` is *not* Cybersecurity, Technical Support, or IT Systems Administration.
+3.  **Location:** Fails if 1) The extracted Location is designated as Onsite or Hybrid and the specified city is *NOT* in the predefined list of commutable locations: [Albany, Troy, Schenectady, Clifton Park, Saratoga Springs, etc.] (~30 minutes from Albany, NY), 2) The role is designated as Remote but includes an explicit geographical restriction outside New York / the Northeast US or a time-zone restriction incompatible with EST (e.g., "PST hours required"), or 3) The Location is "Not Specified" and no other textual evidence confirms remote or commutable status.
+4.  **Employment Type:** Fails if the extracted `Employment Type` is Part-time, Contract, or Temporary. Passes if `Employment Type` is "Not Specified".
+5.  **Residency:** Fails if stated `Residency Requirements` explicitly exclude Watervliet, NY, USA.
+6.  **Security Clearance:** Fails if `Security Clearance` is Required *prior to hire*, is *not* Public Trust, *and* the JD *does not* state it can be obtained post-hire.
+7.  **Travel:** Fails if the specified `Travel Percentage` exceeds 15% annually.
+8.  **Salary:** Fails if the **UPPER BOUND** of the specified salary range is less than $110,000 USD. **Passes if `Salary` is "Not Specified".**
+9.  **Experience:** Fails if the `Experience Requirements` text explicitly demands **ten (10) or more** years of specialized Cybersecurity/InfoSec domain experience.
+10. **Degree:** Fails if `Degree Requirements` mandate a Masters/PhD.
+11. **Certifications:** Fails if `Certification Requirements` list specific certifications *required prior to hire* (other than CompTIA A+ or ACMT) *and* the JD *does not* state they can be obtained post-hire.
+12. **Responsibilities Alignment:** Fails if the summarized `Core Responsibilities` are *not highly aligned* with Michael's background in `myResume`. Fails if `Responsibilities` are "Not Specified".
+    * **Guidance:** Consider responsibilities 'highly aligned' if Michael's resume demonstrates direct, hands-on experience with **at least 60%** of the primary duties listed in the JD. A mismatch in one or two specific niche tools is acceptable if the broader functional experience (e.g., EDR, SIEM, Cloud Security) is clearly present.
+13. **Technical Skills Alignment:** Fails if the `Required Technical Skills` are *not highly aligned* with Michael's skillset in `myResume`. Fails if `Required Technical Skills` are "Not Specified".
+    * **Guidance:** Consider skills 'highly aligned' if Michael's resume lists experience with **at least 60%** of the required technologies, protocols, or platforms. A perfect 1-to-1 match is not required, but core competencies must overlap significantly.
+```
+
+## `myResume` (Michael Martini's Resume)
+
+```text
+Michael Martini
+Healthcare Cybersecurity Engineer - Threat Hunter
+Albany, NY • 518-334-8803 • michaelmartini@gmail.com
+linkedin.com/in/martini-a-michael • github.com/sudoTni 
+Active Public Trust (FDIC, Obtained 12/2024)
+Professional Summary
+
+Cybersecurity Engineer with 2+ years specialized healthcare security experience and Public Trust clearance, built on 12+ years enterprise IT foundation. Secured 40,000+ HIPAA-regulated endpoints, achieving 20% faster incident response and 15% improved threat detection through strategic EDR/XDR implementation. Expert in threat hunting, vulnerability management, multi-cloud security (AWS/Azure/GCP), and compliance frameworks (NIST, RMF, CIS). Proven track record supporting clinical operations while maintaining rigorous security posture and regulatory compliance.
+
+Skills
+
+* Core Security: SIEM/SOC Engineering (Splunk, ELK), EDR/XDR/AV (Carbon Black, Trend OfficeScan), Threat Hunting & Intelligence (MITRE ATT&CK), Incident Response, Vulnerability Management (Qualys), Network Security Monitoring (Suricata, Snort), Malware Analysis
+* Cloud & Compliance: Multi-Cloud Security (AWS/Azure/GCP), CSPM (Prisma Cloud), HIPAA Compliance, Security Frameworks (NIST CSF, RMF, CIS), GRC Platforms (Qualys, Nexpose)
+* Automation & Systems: Python, PowerShell, Identity & Access Management (IAM), Active Directory, System Administration (Windows/Mac/Linux), SCCM, Healthcare IT Environments
+
+Open-Source Projects
+
+AstroEX • AI-Powered Job Search Platform • Personal Project • github.com/sudoTni/AstroEX
+* Developed TypeScript/Node.js application leveraging AI/LLM technology for intelligent job opportunity matching and application materials optimization.
+* Hardened inputs and logs with validation, API-key masking, URL/file-path sanitization, and verbose, structured observability, applying security best practices throughout development.
+
+Professional Experience
+
+Security Engineer (Contract Assignment) • ShorePoint Inc - Remote • Herndon, VA • 1/2025 - 2/2025
+* Secured federal contract role (FDIC) implementing Critical Infrastructure Protection (CIP) security frameworks and compliance standards.
+* Exposed to federal security architecture design, Risk Management Framework (RMF) compliance assessments, and comprehensive risk analysis methodologies.
+* Successfully obtained Public Trust security clearance (12/2024); contract concluded early due to federal program funding reallocation.
+
+Security Analyst • Select Medical - Remote • Mechanicsburg, PA • 7/2021 - 10/2023
+* Co-led enterprise migration of 40k+ HIPAA-protected endpoints from Trend Micro AV to Carbon Black EDR/XDR with custom tuning, achieving 20% faster incident response.
+* Conducted proactive threat hunting using Splunk, Python, and PowerShell, orchestrating remediation of 85% of critical vulnerabilities within SLA requirements.
+* Decreased organizational risk exposure by 18% and maintained HIPAA compliance through systematic security audits and vulnerability assessments using Qualys platform.
+
+Systems Support Specialist • Select Medical - Kessler Institute • West Orange, NJ • 4/2020 - 7/2021
+* Engineered rapid deployment of HIPAA-compliant telehealth infrastructure for 200+ clinicians during COVID-19, maintaining 99% uptime and ensuring uninterrupted patient care delivery.
+* Streamlined IT service delivery through enhanced asset management and ticketing workflow automation, reducing technical issue response times by 35%.
+* Earned 95% clinical staff satisfaction rating and received 17 recognition awards, including Executive "WeCARE" award, for patient-focused technical solutions and support excellence.
+
+Sr. IT Analyst • LEDVANCE / OSRAM SYLVANIA • Bethlehem, PA • 4/2012 - 4/2020
+* Administered enterprise physical security infrastructure (Tyco C-Cure 9000, Siemens SiPass) for 200+ employees across 8 years, maintaining 100% access control compliance.
+* Minimized system vulnerability exposure by 40% through automated patch deployment (SCCM) and proactive system monitoring, strengthening resilience and business continuity.
+
+Genius (Apple Technical Expert) • Apple Store • Wayne, NJ • 10/2010 - 4/2012
+* Resolved 25+ complex technical issues daily while educating customers on security best practices (FileVault encryption, two-factor authentication), earning "Store Hero" and "MVP".
+
+Impact & Recognition
+
+* Executive WeCARE Employee of the Month (Select Medical, 2020) - Recognized for architecting mission-critical secure remote access and telehealth infrastructure during COVID-19 pandemic response.
+* Living the Way Distinguished Service Awards (Select Medical, 2020-2021) - Earned 17 consecutive awards for delivering exceptional patient-centered technical solutions & support.
+* Store Hero & Family Room MVP (Apple, 2010-2012) - Recognized for advanced technical problem-solving expertise and proactive security awareness education.
+
+Certifications & Education
+
+* Apple Certified Mac Technician - ACMT (8/2011) • CompTIA A+ (8/2010)
+* Bachelor’s (BA) in Psychology • William Paterson University • Wayne, NJ • Awarded 12/2009
+   * Pi Lambda Theta Honor Society
+```
+

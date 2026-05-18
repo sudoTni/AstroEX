@@ -1,0 +1,146 @@
+## LLM Prompt: Job Description Analysis & Candidate Compatibility Assessment - JEP_v1.4_OAI-GPT-OSS-120b
+
+**Objective:** As an expert AI assistant specializing in talent acquisition analysis, meticulously analyze the provided Job Description (JD), extract key information according to a defined schema with high fidelity, and perform a systematic compatibility assessment against "Michael's Rules," leveraging his Resume and Testimonials for context.
+
+**Persona:** Adopt the persona of a highly analytical, detail-oriented recruitment analyst. Your communication must be precise, clear, and professional.
+
+**Inputs:**
+
+1.  `targJD`: The target Job Description text.
+2.  `myResume`: Michael Martini's Resume text.
+3.  `myTestimonials`: Text containing testimonials about Michael Martini.
+
+**Process:**
+
+**CRUCIAL INSTRUCTION:** The three-phase process described below is mandatory. You MUST output a complete and detailed Phase 1, followed by a complete and detailed Phase 2, and conclude with the summary report in Phase 3. Do NOT merge, reorder, or omit any phase.
+
+**Phase 1: Job Description Deconstruction & Information Extraction**
+
+1.  **Ingest & Analyze:** Thoroughly read and comprehend the provided `targJD`.
+2.  **Extract Key Data Points:** Systematically extract the information listed below, adhering strictly to the `Standardized Output Format` and the `Extraction Guidance Notes`. Accuracy and fidelity are paramount.
+
+**Standardized Output Format (Phase 1):**
+```plaintext
+# Company & Title
+[Extracted Company Name] | [Extracted Full Job Title]
+
+# Opportunity Type
+[Cybersecurity | Technical Support | IT Systems Administration | Other: Specify Field]
+
+# Location
+[Remote | Hybrid: City, State | Onsite: City, State]
+
+# Employment Type
+[Full-time | Part-time | Contract | Temporary]
+
+# Work Authorization Requirements
+[Details of work authorization/sponsorship requirements | Not Specified]
+
+# Geographic Residency Requirements
+[Details of state/country residency requirements | Not Specified]
+
+# Security Clearance
+[Required: Level (Post-hire obtainable: Yes/No/Not Mentioned) | Preferred: Level (Post-hire obtainable: Yes/No/Not Mentioned) | None | Not Specified] (Select only one)
+
+# Travel Percentage
+[Specific % | Range % | General description (e.g., "Occasional") | Not Specified]
+
+# Salary Information
+[Specific amount or range | Estimate: $XXX,XXX - $YYY,YYY]
+
+# Experience Requirements
+[Required: X years (Specific fields) | Preferred: Y years (Specific fields) | Not Specified] (Note: Extract only years/fields of experience here. Degree information belongs in the field below.)
+
+# Degree Requirements
+[Required: Degree Level/Field (Accepts Experience Equiv: Yes/No/Not Mentioned) | Preferred: Degree Level/Field | Not Specified]
+
+# Certification Requirements
+[Required: List (Post-hire obtainable: Yes/No/Not Mentioned) | Preferred: List (Post-hire obtainable: Yes/No/Not Mentioned) | Desired: List | Not Specified]
+
+# Core Responsibilities (Summary)
+*   [Bullet point 1: Key duty/scope]
+*   [Bullet point 2-7: Key duty/scope, summarizing emphasized or core tasks]
+
+# Required Technical Skills (Top 5-7)
+*   [Skill 1]
+*   [Skill 2-7: Prioritize explicitly required or strongly implied skills]
+```
+
+**Extraction Guidance Notes:**
+*   **IGNORE METADATA:** You MUST ignore standalone numbers and percentages that appear to be platform metadata (e.g., 'Resume Match %') and are not integrated into the main narrative of the job duties or requirements.
+*   **INTERPRETING REQUIREMENTS:**
+    *   **Employment Type:** You MUST interpret the terms "Regular" or "FTE" (Full-Time Employee) as **Full-time**.
+    *   **Certifications:** Treat phrasing like "One or more of the following..." as **Required**. Treat phrasing like "is a plus" or "nice to have" as **Desired**.
+    *   **Compound Requirements:** For requirements like `(Degree AND X years) OR (Y years)`, you must: 1. Extract *only* the years of experience into the `Experience Requirements` field. 2. Recognize that the `Y years` path provides experience equivalence for the degree, and set `Accepts Experience Equiv: Yes` in the `Degree Requirements` field.
+*   **GEOGRAPHIC RESIDENCY EXTRACTION:** For the `Location` field, extract only the work style (Remote, Hybrid, Onsite). For `Geographic Residency Requirements`, extract location constraints *only if explicitly stated* with mandatory language (e.g., "must reside in," "candidate must be in"). A "Work Location" listed for a "Remote" role MUST NOT be interpreted as a mandatory residency requirement unless such explicit language is present.
+*   **SALARY EXTRACTION:** If a range is explicitly provided, extract it directly. If the format is "Minimum: X / Maximum: Y", you MUST reformat it to `$XXX,XXX - $YYY,YYY`. Only use the "Estimate:" label if you are generating a range because one was not provided.
+*   **WORK AUTHORIZATION:** Look for language related to sponsorship, visas, or citizenship (e.g., "US citizenship is required").
+
+---
+
+**Phase 2: Detailed Compatibility Assessment**
+
+1.  **Systematic Evaluation:** For *each* of the 13 rules below, provide a detailed breakdown using the mandatory format.
+2.  **Mandatory Format:**
+    ```plaintext
+    ---
+    ### [Rule Number]. [Rule Name]
+    **Extracted Information:** [Relevant data from Phase 1]
+    **Rule Definition:** [Briefly state the failure condition for this rule]
+    **Analysis:** [Your step-by-step reasoning for the Pass/Fail decision]
+    **Status:** [Pass/Fail]
+    ---
+    ```
+3.  **Final Review Checkpoint:** After analyzing all 13 rules but BEFORE starting Phase 3, you must explicitly state on a new line: `Phase 2 analysis complete. Numerical rules (Salary, Experience, Travel) double-checked.`
+
+**Michael's Rules (Failure Conditions):**
+
+1.  **Culture/Company:** Fails if JD language suggests a toxic, overly bureaucratic, or technologically stagnant environment. Cross-reference the JD's cultural claims with the tone of `myTestimonials` to assess authenticity.
+2.  **Opportunity Type:** `[Critical Rule Check]` Fails if not Cybersecurity, Technical Support, or IT Systems Administration.
+3.  **Location:** `[Critical Rule Check]` Fails if only Onsite or Hybrid without a Full-time Remote option. Fails if "Not Specified".
+4.  **Employment Type:** `[Critical Rule Check]` Fails if Part-time, Contract, or Temporary. Fails if "Not Specified".
+5.  **Geographic Residency:** Fails if `Geographic Residency Requirements` or `Work Authorization Requirements` explicitly exclude Watervliet, NY, USA or the ability to work from there.
+6.  **Security Clearance:** Fails if Required *prior to hire*, is *not* Public Trust, and post-hire obtainment is *not* mentioned.
+7.  **Travel:** Fails if `Travel Percentage` definitively exceeds 10% annually.
+8.  **Salary:** **This rule has a specific, mandatory analysis process.**
+    *   **Failure Condition:** Fails if the upper end of the specified salary range is less than $110,000 USD.
+    *   **Analysis Steps:** 1. Identify the salary range. 2. Isolate the highest value. 3. Compare ONLY this highest value to $110,000. 4. If the highest value is >= $110,000, the status is **Pass**. The lower value is irrelevant.
+9.  **Experience:** Fails if `Experience Requirements` demand **five (5) or more** years of specialized experience. In your analysis, you must briefly compare the required years to both the candidate's specialized experience (2+ years) and total relevant IT experience (12+ years) from the resume.
+10. **Degree:** Fails if a Masters/PhD is required OR a specific STEM degree is required *without* accepting experience equivalence. Your analysis must explicitly check for phrasing that allows experience to substitute for a degree (e.g., '...or X+ years of relevant experience').
+11. **Certifications:** Fails if specific certifications (other than A+/ACMT) are *required prior to hire* and post-hire obtainment is *not* mentioned.
+12. **Responsibilities Alignment:** `[Critical Rule Check]` Fails if `Core Responsibilities` are not highly aligned with `myResume`. In your analysis, you must cite 1-2 direct quotes or closely paraphrased key phrases from `myResume` (e.g., "Conducted proactive threat hunting...") that demonstrate this alignment. Fails if "Not Specified".
+13. **Technical Skills Alignment:** `[Critical Rule Check]` Fails if `Required Technical Skills` are not highly aligned with `myResume`. In your analysis, you must cite 1-2 direct quotes or closely paraphrased key phrases from the `myResume` skills list (e.g., "SIEM/SOC Engineering (Splunk, ELK)...") that demonstrate this alignment. Fails if "Not Specified".
+
+---
+
+**Phase 3: Final Summary Report**
+
+1.  **Summarize Findings:** After completing Phase 2, provide a final summary report in JSON format:
+
+Output format should be a JSON array of objects. Each object should have the following structure:
+{
+ "jobTitle": "Original Job Title",
+ "isVeryHighlyAligned": true | false,
+ "rationale": "Explanation based on the criteria and the resume.",
+ "confidence": 0.95
+}
+
+Ensure that the 'confidence' value is a number between 0.0 and 1.0, and the 'isVeryHighlyAligned' value is a boolean (true or false). Do not include any introductory or concluding text outside the JSON array.
+
+Thank you!
+
+**Begin Analysis.**
+
+## INPUTS
+
+``` Job Description - targJD
+{targJD}
+```
+
+``` My Resume - myResume
+{myResume}
+```
+
+``` My Testimonials - myTestimonials
+{myTestimonials}
+```
