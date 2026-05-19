@@ -23,8 +23,20 @@ node_modules/
 
 # --- Developer scratch files -------------------------------------------------
 debug_scrape_output.json
+debug_url.js
+verify_maxTokens_limits.js
+implementation_plan.md
 *.old
 *.orig
+
+# --- Ad-hoc root-level test & debug scripts ----------------------------------
+# (keep test/ directory — that is the formal test suite)
+test_*.ps1
+test_*.js
+test-*.js
+testie.bash
+testie_log.bash
+testicle.bash
 
 # --- OS & editor noise -------------------------------------------------------
 .DS_Store
