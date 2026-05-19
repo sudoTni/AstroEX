@@ -1,5 +1,7 @@
 # AstroEX v3.5.0
 
+<img width="826" height="505" alt="481357807-10c15f45-25e3-4722-93da-98cd759df37c" src="https://github.com/user-attachments/assets/57ad461e-29f0-4103-be5a-95079728fed2" />
+
 AstroEX (formerly "AstroFind") is an enterprise-grade LinkedIn job processing pipeline with dynamic pagination, anti-bot evasion through jitter delays, exponential backoff retry mechanisms, stream processing for memory efficiency, completely overhauled statistics framework, improved logging clarity, singleton pattern optimization, comprehensive CLI configuration options, and 100% backwards compatibility. Built with Node.js and Puppeteer, it provides production-ready job scraping, filtering, and evaluation with advanced performance optimizations and robust error handling.
 
 > IMPORTANT: Web scraping can frequently violate the terms of service of a website. Always review and respect a website's robots.txt file and its Terms of Service. In this instance, this code should be used ONLY for teaching and hobby purposes. LinkedIn specifically prohibits any data extraction from its website; you can read more here: https://www.linkedin.com/legal/crawling-terms.
