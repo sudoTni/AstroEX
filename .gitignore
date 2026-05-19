@@ -37,6 +37,7 @@ test-*.js
 testie.bash
 testie_log.bash
 testicle.bash
+testicle.ps1
 
 # --- OS & editor noise -------------------------------------------------------
 .DS_Store
