@@ -1,5 +1,7 @@
 # AstroEX 5.0.0
 
+<img width="847" height="447" alt="ss5" src="https://github.com/user-attachments/assets/6034093d-56f0-4030-913a-737013aa2e72" />
+
 AstroEX is a Node.js and TypeScript pipeline for acquiring, filtering, ranking,
 and evaluating job listings, then generating tailored application materials.
 It supports source-neutral LinkedIn and Indeed acquisition, a legacy
