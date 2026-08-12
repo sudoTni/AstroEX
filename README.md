@@ -1,6 +1,6 @@
 # AstroEX 5.0.0
 
-<p><img width="765" height="509" alt="ss5" src="https://github.com/user-attachments/assets/a787077c-9d07-44a8-bfb8-8cf665f2bea9" /></p>
+<p align="center"><img width="765" height="509" alt="ss5" src="https://github.com/user-attachments/assets/a787077c-9d07-44a8-bfb8-8cf665f2bea9" /></p>
 
 AstroEX is a Node.js and TypeScript pipeline for acquiring, filtering, ranking,
 and evaluating job listings, then generating tailored application materials.
