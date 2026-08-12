@@ -1,0 +1,48 @@
+# Dependencies and build output
+node_modules/
+dist/
+coverage/
+.nyc_output/
+*.tsbuildinfo
+
+# Runtime state and generated content
+data/
+logs/
+materials/
+materials-deployed/
+chrome/
+*.log
+*.pid
+*.tmp
+*.cache
+temp-*/
+
+# User-specific application data. Commit only documentation and examples.
+user_data/*
+!user_data/README.md
+!user_data/*.example
+
+# Local credentials and environment overrides
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+credentials.json
+secrets.json
+
+# Archives and local package artifacts
+*.tgz
+*.tar.gz
+*.zip
+
+# Editor and operating-system metadata
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
+*~

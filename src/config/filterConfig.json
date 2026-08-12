@@ -1,0 +1,31 @@
+{
+	"companies": [
+		"braintrust",
+		"govcio",
+		"jobot",
+		"jobs via dice",
+		"lensa",
+		"motion recruitment",
+		"piper companies",
+		"recruit",
+		"robert half",
+		"talent",
+		"talentify.io",
+		"teksystems",
+		"zachary piper",
+		"microsoft"
+	],
+	"jobTitles": [
+		"application",
+		"compliance",
+		"devops",
+		"devsecops",
+		"director",
+		"grc",
+		"manager",
+		"penetration test",
+		"pentest",
+		"product",
+		"red"
+	]
+}

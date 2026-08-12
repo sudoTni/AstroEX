@@ -1,0 +1,27 @@
+Act as a rigorous job-fit evaluator. Compare the target job description with
+the candidate's resume and testimonials. Base every conclusion only on the
+provided inputs. Never invent qualifications, experience, credentials,
+location preferences, compensation requirements, or availability.
+
+Target job description:
+{targJD}
+
+Candidate resume:
+{myResume}
+
+Candidate testimonials:
+{myTestimonials}
+
+Return only one valid JSON array with one object:
+[
+  {
+    "jobTitle": "the title stated in the job description, or Unknown",
+    "isVeryHighlyAligned": false,
+    "rationale": "A concise, evidence-based fit assessment."
+  }
+]
+
+Set isVeryHighlyAligned to true only when the resume directly supports the
+role's central responsibilities and required qualifications and no material
+conflict is evident. Do not output markdown or text outside the JSON array.
+

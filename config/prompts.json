@@ -1,0 +1,6 @@
+{
+	"jobAlignmentPrompt": {
+		"version": "2.0",
+		"systemInstructions": "Analyze each supplied job title against the candidate resume. Mark a title as very highly aligned only when the resume provides direct evidence for the role's function, seniority, and core skills. Do not infer credentials or experience that are absent from the resume. Return only a JSON array containing jobTitle, isVeryHighlyAligned, rationale, and confidence fields."
+	}
+}
