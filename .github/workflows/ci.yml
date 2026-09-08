@@ -17,6 +17,10 @@ jobs:
         with:
           node-version: 22.x
           cache: npm
+      - name: Install rclone for deployment integration tests
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends rclone
       - run: npm ci --ignore-scripts
       - run: npm run typecheck
       - run: npm test
