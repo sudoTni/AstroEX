@@ -394,12 +394,11 @@ Dear Hiring Team at Acme Security,\n\nI am thrilled to apply...`,
 			jobJudge: "jep_glm-5.3-flash",
 			makeMaterials: "rop_g5.6-luna_or",
 		},
+		providers: {
+			apiKey: "mock-api-key",
+		},
 		options: {
 			clean: false,
-			sleep: 0,
-		},
-		jobDefaults: {
-			apiKey: "mock-api-key",
 			sleep: 0,
 		},
 	});
