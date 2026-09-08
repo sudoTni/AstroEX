@@ -1,5 +1,7 @@
 # AstroEX v0.13.0
 
+<p align = "center"><img width="803" height="550" alt="astroex_ss00" src="https://github.com/user-attachments/assets/3c8087fa-c043-4197-b436-91ef7e83d0a0" /></p>
+
 AstroEX is a Node.js/TypeScript command-line pipeline for acquiring Indeed jobs, normalizing and filtering them, evaluating their fit with LLMs, and generating tailored application materials. It uses SQLite for durable duplicate protection and stage checkpoints so interrupted runs can resume safely.
 
 The active product scope is Indeed only. LinkedIn acquisition and browser-scraping workflows have been retired.
