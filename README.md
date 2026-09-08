@@ -1,425 +1,362 @@
-# AstroEX 5.0.0
+# AstroEX v0.13.0
 
-<p align="center"><img width="765" height="509" alt="ss5" src="https://github.com/user-attachments/assets/a787077c-9d07-44a8-bfb8-8cf665f2bea9" /></p>
+AstroEX is a Node.js/TypeScript command-line pipeline for acquiring Indeed jobs, normalizing and filtering them, evaluating their fit with LLMs, and generating tailored application materials. It uses SQLite for durable duplicate protection and stage checkpoints so interrupted runs can resume safely.
 
-AstroEX is a Node.js and TypeScript pipeline for acquiring, filtering, ranking,
-and evaluating job listings, then generating tailored application materials.
-It supports source-neutral LinkedIn and Indeed acquisition, a legacy
-Puppeteer-based LinkedIn workflow, configurable LLM providers, structured
-logging, run statistics, and a shared duplicate checkpoint.
+The active product scope is Indeed only. LinkedIn acquisition and browser-scraping workflows have been retired.
 
-> [!CAUTION]
-> Web scraping may violate a website's terms of service or other restrictions.
-> Review the applicable terms, robots guidance, rate limits, and laws before
-> using AstroEX. LinkedIn expressly restricts automated data extraction in its
-> [crawling terms](https://www.linkedin.com/legal/crawling-terms). This project
-> is intended for education and personal experimentation; you are responsible
-> for how you use it.
+## Pipeline at a glance
 
-## Highlights
+| Stage        | Command         | Reads                                                        | Writes                                             |
+| ------------ | --------------- | ------------------------------------------------------------ | -------------------------------------------------- |
+| 1. Acquire   | `acquire-jobs`  | Search terms and Indeed results                              | Canonical `acquired_jobs_*.json`                   |
+| 2. Process   | `processData`   | Every `acquired_jobs_*.json` in the selected input directory | Normalized, filtered, deduplicated job array       |
+| 3. Prefilter | `jobCloth`      | Processed job array and applicant resume                     | Jobs whose titles merit deeper evaluation          |
+| 4. Evaluate  | `jobJudge`      | Clothed jobs and applicant profile                           | Per-job JSON in `astroapply_eval_{pass,fail,dupe}` |
+| 5. Generate  | `makeMaterials` | Passing evaluations and applicant profile                    | One tailored text bundle per job                   |
 
-- Acquire normalized job records from LinkedIn and Indeed.
-- Scrape LinkedIn search results and full job descriptions with Puppeteer.
-- Process, filter, and deduplicate JSON and NDJSON artifacts across stages.
-- Prefilter titles and evaluate full descriptions with configurable LLM presets.
-- Generate tailored professional summaries, skills, and cover letters.
-- Suppress repeated work for 30 days with the shared JobDB checkpoint.
-- Write redacted JSON Lines logs and machine-readable run statistics.
-- Keep profile data, credentials, logs, and generated artifacts out of Git.
-
-The `acquire-jobs` implementation vendors and adapts selected components from
-[`ts-jobspy`](https://github.com/alpharomercoma/ts-jobspy), the MIT-licensed
-TypeScript job-scraping project by Alpha Romer Coma. See
-[Acknowledgments](#acknowledgments) and the
-[integration note](docs/jobspy-integration.md) for full provenance.
-
-## Workflow
-
-The main stages are independent, so you can stop after acquisition or provide
-your own compatible artifact at a later stage.
-
-```text
-acquire-jobs ─┐
-              ├─> processData ─> jobCloth ─> scrape-jobs ─> jobJudge ─> makeMaterials
-scrape-search ┘                       (LinkedIn descriptions)
-```
-
-- `acquire-jobs` is the source-neutral path for LinkedIn and Indeed.
-- `scrape-search`, `scrape-job`, and `scrape-jobs` are LinkedIn-specific.
-- `scrape-jobs` skips non-LinkedIn URLs; Indeed descriptions should be retained
-  during acquisition with `--description-mode available` or `full`.
-- `jobCloth`, `jobJudge`, and `makeMaterials` call third-party LLM APIs and may
-  incur provider charges.
+`run-pipeline` executes all five stages, runs preflight validation first, and can optionally deploy generated text files with `rclone`.
 
 ## Requirements
 
-- Node.js 20 or newer
-- npm and network access for installation and external services
-- A provider API key for AI-assisted stages
-- `INDEED_API_KEY` when Indeed is included in `acquire-jobs`
+- Node.js 22.13.0 or newer
+- npm
+- An API key accepted by the LLM provider selected in `config/presets.json`
+- An Indeed client key supplied through `ASTROEX_INDEED_API_KEY` for acquisition
+- `rclone` only when deployment is enabled
 
-Puppeteer downloads a compatible Chromium build during a normal install.
-
-## Installation
+From a source checkout:
 
 ```bash
-git clone <repository-url>
-cd astroex
 npm ci
-
-# Create ignored local copies of the public templates.
-for file in user_data/*.example; do cp "$file" "${file%.example}"; done
-
-npm run start -- --help
+npm run build
+cp -R profile.example profile
 ```
 
-Replace every bracketed placeholder in the copied `user_data/*.txt` files
-before using AI evaluation or materials generation. The `.example` files are
-public templates and must not contain real personal information.
+The project compiles as strict TypeScript to CommonJS in `dist/`.
 
-## Credentials and private data
+## Configuration
 
-Pass secrets through your shell or a secret manager. For example:
+AstroEX reads configuration from CLI arguments and environment variables. It does **not** automatically load a `.env` file. Use `.env.example` as a template for your shell, process manager, or secrets manager.
+
+For example:
 
 ```bash
-export OPENROUTER_API_KEY="replace-with-a-real-key"
-export INDEED_API_KEY="replace-with-a-real-key"
+export AEX_OR_API_KEY="your-provider-key"
+export ASTROEX_INDEED_API_KEY="your-indeed-client-key"
+export ASTROEX_PROFILE_DIR="/private/path/astroex-profile"
+export ASTROEX_DATA_DIR="/private/path/astroex-state/data"
+export ASTROEX_LOG_DIR="/private/path/astroex-state/logs"
+export ASTROEX_MATERIALS_DIR="/private/path/astroex-state/materials"
 ```
 
-Never put keys in `config/presets.json`, prompt files, command scripts, examples,
-or committed configuration. `.env.example` provides blank placeholders for
-common provider variable names, but AstroEX does not load `.env` files by
-itself; your shell, process manager, or secret manager must inject them.
+Never commit real credentials or pass them in scripts. A CLI `--api-key` value may also be visible in shell history and process listings; the environment-based `run-pipeline` workflow is preferred for unattended use.
 
-The primary AI commands accept `--api-key`. Supplying the value from an
-environment variable keeps the literal key out of the command:
+### Profile directory
+
+`ASTROEX_PROFILE_DIR` defaults to the ignored `profile` directory in the project. Copy `profile.example` to `profile`, then replace its generic sample content before a real run. A profile can contain:
+
+| File                          | Purpose                                                                         |
+| ----------------------------- | ------------------------------------------------------------------------------- |
+| `search_terms.txt`            | One search term per line. Blank lines and lines beginning with `#` are ignored. |
+| `my_resume.txt`               | Resume supplied to the LLM stages.                                              |
+| `my_professional_title.txt`   | Current professional title.                                                     |
+| `my_professional_summary.txt` | Current professional summary.                                                   |
+| `my_key_skills.txt`           | Current skills inventory.                                                       |
+| `my_testimonials.txt`         | Testimonials supplied during evaluation and generation.                         |
+| `company_filters.txt`         | Case-insensitive company substrings excluded by `processData`.                  |
+| `title_filters.txt`           | Case-insensitive title substrings excluded by `processData`.                    |
+
+Preflight requires non-empty `search_terms.txt` and `my_resume.txt`. Missing optional applicant files are replaced with explicit placeholder text, so complete them before a real LLM run.
+
+### Environment variables
+
+| Variable                              | Effect                                                                     |
+| ------------------------------------- | -------------------------------------------------------------------------- |
+| `AEX_OR_API_KEY`                      | Preferred API-key fallback for `run-pipeline`.                             |
+| `OPENAI_API_KEY`                      | Secondary pipeline fallback; also used directly by standalone `jobJudge`.  |
+| `ASTROEX_INDEED_API_KEY`              | Indeed client key required by job acquisition.                             |
+| `ASTROEX_PROFILE_DIR`                 | Applicant profile and filter directory.                                    |
+| `ASTROEX_DATA_DIR`                    | Job artifacts, statistics, and `jobDB.sqlite`.                             |
+| `ASTROEX_LOG_DIR`                     | Log and optional payload-diagnostic directory.                             |
+| `ASTROEX_MATERIALS_DIR`               | Generated application-materials directory.                                 |
+| `ASTROEX_DEPLOYED_MATERIALS_DIR`      | Local archive used after successful deployment.                            |
+| `ASTROEX_JOB_CLOTH_PRESET`            | Default JobCloth preset for `run-pipeline`.                                |
+| `ASTROEX_JOB_JUDGE_PRESET`            | Default JobJudge preset for `run-pipeline`.                                |
+| `ASTROEX_MAKE_MATERIALS_PRESET`       | Default MakeMaterials preset for `run-pipeline`.                           |
+| `ASTROEX_MAX_LLM_REQUESTS`            | Maximum provider requests for the process.                                 |
+| `ASTROEX_MAX_LLM_OUTPUT_TOKENS`       | Maximum declared output tokens per request.                                |
+| `ASTROEX_MAX_TOTAL_LLM_OUTPUT_TOKENS` | Maximum total reserved output tokens across requests.                      |
+| `ASTROEX_LLM_DEADLINE_MS`             | Wall-clock deadline for LLM activity.                                      |
+| `ASTROEX_HIDE_REASONING=1`            | Suppress reasoning/thinking-token display.                                 |
+| `ASTROEX_REMOTE_ONLY=1`               | Strict remote-only retention for `run-pipeline`; standalone uses its flag. |
+| `AEX_DEPLOY_DESTINATION`              | `rclone` destination used with `run-pipeline --deploy`.                    |
+| `NO_COLOR` or `ASTROEX_NO_COLOR`      | Disable ANSI color output.                                                 |
+
+Directory overrides may be absolute or relative to the directory from which AstroEX is invoked.
+
+### Presets and prompts
+
+`config/presets.json` selects the provider, base URL, model, prompt template, sampling values, and output-token ceiling for each LLM stage. Presets are grouped under `jobCloth`, `jobJudge`, and `makeMaterials`; each command validates that its selected preset belongs to the correct group.
+
+Prompt templates live in `prompts/`. The shared Veritas system prompt lives in `sysprompts/veritas_sys_prompt.txt`.
+
+OpenRouter and Poe use the implemented OpenAI-compatible transports. Direct Gemini and Mistral transports are currently stubs that throw at runtime; consequently, `jep_gas-gf2.0t` and `rop_m-l_01` are listed presets but are not operational until those integrations are implemented.
+
+List current preset names and all supported options with:
 
 ```bash
-npm run job:cloth -- \
-  --preset jc_mai-ds-r1 \
-  --api-key "$OPENROUTER_API_KEY"
+npm run start -- jobCloth --help
+npm run start -- jobJudge --help
+npm run start -- makeMaterials --help
 ```
 
-Treat generated data as private. Job descriptions, evaluation results,
-materials, and logs can contain personal details or provider payloads. The
-default `.gitignore` excludes `data/`, `logs/`, `materials/`, private
-`user_data/*.txt` files, `.env*`, and common credential-file formats.
+## Quick start: complete pipeline
 
-## Quick start
-
-This example runs the LinkedIn-only path, so it does not require an Indeed key.
-It uses current presets from `config/presets.json`; change them to match your
-provider.
+Set the API key and profile directory, then validate the environment without making provider requests:
 
 ```bash
-# 1. Acquire recent remote listings.
-npm run acquire:jobs -- \
-  --sites linkedin \
-  --search-terms-file ./user_data/search_terms.txt \
-  --locations Remote \
-  --hours-old 72 \
-  --results-wanted 25 \
-  --description-mode full
+export AEX_OR_API_KEY="your-provider-key"
+export ASTROEX_INDEED_API_KEY="your-indeed-client-key"
+export ASTROEX_PROFILE_DIR="/private/path/astroex-profile"
 
-# 2. Merge, filter, and deduplicate acquisition artifacts.
-npm run process -- \
-  --input-dir ./data \
-  --output-file ./data/processed_jobs.json
-
-# 3. Use an LLM to retain promising titles.
-npm run job:cloth -- \
-  --preset jc_mai-ds-r1 \
-  --api-key "$OPENROUTER_API_KEY"
-
-# 4. Download detailed LinkedIn descriptions for retained jobs.
-npm run scrape:jobs
-
-# 5. Evaluate the detailed records.
-npm run job:judge -- \
-  --preset jep_mai-ds-r1 \
-  --api-key "$OPENROUTER_API_KEY"
-
-# 6. Generate materials for jobs that passed evaluation.
-npm run makeMaterials -- \
-  --preset rop_ds-v3-0324 \
-  --api-key "$OPENROUTER_API_KEY"
+npm run start -- preflight \
+  --require-api-key \
+  --require-indeed-api-key \
+  --presets "jc_glm-5.3-flash,jep_glm-5.3-flash,rop_g5.6-luna_or"
 ```
 
-Before a real run, inspect the generic templates in `prompts/` and configure
-them for your intended evaluation criteria and output format.
-
-## Acquisition
-
-### LinkedIn and Indeed with `acquire-jobs`
-
-`acquire-jobs` writes a source-aware JSON array to
-`data/acquired_jobs_<timestamp>.json`. Supported `--sites` values are
-`linkedin` and `indeed`; both are selected by default. If Indeed is selected,
-`INDEED_API_KEY` must be present in the environment.
+Run the pipeline:
 
 ```bash
-npm run acquire:jobs -- \
-  --sites indeed,linkedin \
-  --search-terms "Security Engineer,SOC Analyst" \
-  --locations Remote \
+npm run pipeline -- \
+  --search-terms-file "search_terms.txt" \
+  --jobcloth-preset "jc_glm-5.3-flash" \
+  --jobjudge-preset "jep_glm-5.3-flash" \
+  --makematerials-preset "rop_g5.6-luna_or" \
+  --batch 25 \
+  --sleep 5 \
+  --results-wanted 50 \
   --hours-old 24 \
-  --results-wanted 25 \
-  --linkedin-results-wanted 100 \
-  --indeed-country USA \
-  --description-mode available
+  --jc-reasoning-effort "low" \
+  --jj-reasoning-effort "high" \
+  --mm-reasoning-effort "max"
 ```
 
-Relevant defaults and options:
+For `run-pipeline`, a relative `--search-terms-file` is resolved **inside `ASTROEX_PROFILE_DIR`**. Pass `search_terms.txt`, as above, or pass an absolute path. Do not prefix the default filename with the profile-directory name.
 
-- Searches remote roles by default; use `--no-remote` for a broader search.
-- `--results-wanted 25` applies per source, term, and location.
-- LinkedIn has a separate conservative limit of
-  `--linkedin-results-wanted 100` per term and location.
-- `--hours-old 168` limits results to the previous seven days.
-- `--description-mode` accepts `none`, `available`, or `full`; `full` also
-  requests each LinkedIn public detail page.
-- `--description-format` accepts `markdown`, `html`, or `plain`.
-- `--job-type` accepts `fulltime`, `parttime`, `contract`, or `internship`.
-- `--output-file` can name a stable checkpoint. A rerun with the same path
-  resumes from records already written there.
+The pipeline defaults are:
 
-Use `npm run acquire:jobs -- --help` for the complete option list, including
-distance, easy-apply, proxies, and user-agent settings.
+- Presets: `jc_glm-5.3-flash`, `jep_glm-5.3-flash`, and `rop_g5.6-luna_or`
+- Acquisition: up to 9,999 results per search term, posted within 24 hours
+- JobCloth batch size: 25
+- JobJudge delay: 5 seconds per evaluation
+- Reasoning and response streaming enabled unless suppressed
+- Deployment and strict remote-only filtering disabled
 
-When an acquired record already has `descriptionText`, you can pass a specific
-processed or clothed JSON file directly to `jobJudge` with `--input-file`.
-Otherwise, use `scrape-jobs` to retrieve detailed LinkedIn records first.
+Use `--skip-acquisition` to reuse acquisition artifacts, or `--skip-materials` to stop after JobJudge. Downstream stages still run when acquisition is skipped.
 
-### LinkedIn-specific acquisition
+## Step-by-step workflow
 
-The legacy browser workflow remains available when you need direct control over
-LinkedIn pagination and description scraping.
+Explicit paths make standalone runs deterministic. The examples below assume the default runtime directories. An isolated `ASTROEX_DATA_DIR` is recommended because `processData` intentionally reads every matching acquisition artifact in that directory; when using an override, update the explicit paths accordingly.
+
+### 1. Acquire jobs
 
 ```bash
-# Search result cards. Search terms default to user_data/search_terms.txt.
-npm run scrape:search -- \
-  --search-terms "Security Engineer,SOC Analyst" \
-  --locations Remote \
-  --max-pages 10 \
-  --sleep-min 3 \
-  --sleep-max 7 \
-  --retry-max 3
-
-# One job description.
-npm run scrape:job -- \
-  --url "https://www.linkedin.com/jobs/view/example-1234567890"
-
-# All LinkedIn URLs retained by jobCloth; output is NDJSON.
-npm run scrape:jobs -- \
-  --input-file "./data/clothed_jobs_*.json" \
-  --sleep-min 2.5 \
-  --sleep-max 4.5 \
-  --max-retries 3
+npm run acquire:jobs -- \
+  --search-terms "security engineer" \
+  --locations "New York, NY" \
+  --results-wanted 50 \
+  --hours-old 24 \
+  --description-mode available \
+  --output-file "./data/acquired_jobs_indeed.json"
 ```
 
-For `scrape-search`, `--company-filters` is an inclusion filter: only matching
-companies are kept. In `processData`, company and title filters are exclusions.
+Standalone `acquire-jobs` defaults to a remote source query (`--remote`). Use `--no-remote` for a broad search. `--remote-only` is a stricter post-acquisition filter that retains only records where `isRemote === true`; false, missing, null, and indeterminate values are discarded. The full pipeline performs a broad search by default and enables the remote source query and strict filter together when `--remote-only` or `ASTROEX_REMOTE_ONLY=1` is set.
 
-## Processing and AI stages
+An existing output file is treated as an acquisition checkpoint. Valid canonical jobs are loaded, deduplicated, and preserved before new search results are appended atomically.
 
-### Process acquired data
-
-`processData` reads `scraped_search_*.json` and `acquired_jobs_*.json` artifacts,
-then filters and deduplicates them by ID and company/title.
+### 2. Normalize, filter, and deduplicate
 
 ```bash
 npm run process -- \
-  --input-dir ./data \
-  --output-file ./data/processed_jobs.json \
-  --company-filters "Example Staffing" \
-  --title-filters "Intern,Director"
+  --input-dir "./data" \
+  --output-file "./data/processed_jobs_indeed.json"
 ```
 
-Filters from the command line are added to the ignored lists in
-`user_data/company_filters.txt` and `user_data/title_filters.txt`.
+`processData` reads `acquired_jobs_*.json`, accepts canonical or historical Indeed-shaped entries, rejects retired/unknown sources, applies the profile and CLI exclusion filters, and deduplicates by job ID and normalized title/company pair. It replaces its output atomically and writes a companion integrity manifest.
 
-### Prefilter with `jobCloth`
-
-`jobCloth` detects `data/processed_jobs*.json` when no input is specified,
-evaluates titles in batches, and writes `data/clothed_jobs_<timestamp>.json` by
-default. Supply `--input-file` when multiple matching inputs are present and
-you need to select one explicitly.
+### 3. Prefilter with JobCloth
 
 ```bash
 npm run job:cloth -- \
-  --preset jc_mai-ds-r1 \
-  --api-key "$OPENROUTER_API_KEY" \
-  --batch 100 \
-  --retries 3
+  --input-file "./data/processed_jobs_indeed.json" \
+  --output-file "./data/clothed_jobs_indeed.json" \
+  --preset "jc_glm-5.3-flash" \
+  --api-key "$AEX_OR_API_KEY"
 ```
 
-### Evaluate with `jobJudge`
+JobCloth evaluates unique job titles in batches against the resume, then retains all jobs associated with accepted titles. Failed batches are retried and can fall back to individual title evaluation. Its output has a SHA-256 manifest and a durable stage checkpoint.
 
-`jobJudge` auto-detects `data/scraped_jobs_*.json` and accepts JSON arrays,
-single JSON objects, or NDJSON. A preset is required.
+### 4. Evaluate with JobJudge
 
 ```bash
 npm run job:judge -- \
-  --preset jep_mai-ds-r1 \
-  --api-key "$OPENROUTER_API_KEY" \
-  --eval-mode 4 \
+  --input-file "./data/clothed_jobs_indeed.json" \
+  --preset "jep_glm-5.3-flash" \
+  --api-key "$AEX_OR_API_KEY" \
   --sleep 2
 ```
 
-Results are written to `data/astroapply_eval_pass/`,
-`data/astroapply_eval_fail/`, and `data/astroapply_eval_dupe/`. Use
-`--strict-parsing` to stop instead of applying fallback parsing when an LLM
-response is malformed.
+JobJudge evaluates each Indeed job with a non-empty description against the applicant profile. Results are written to `astroapply_eval_pass`, `astroapply_eval_fail`, or `astroapply_eval_dupe` under the selected data directory. Each newly evaluated pass/fail result has a companion manifest; duplicate markers do not. The SQLite repository prevents an already-judged job from being evaluated again during the retention period.
 
-### Generate application materials
-
-`makeMaterials` reads evaluated jobs from `data/astroapply_eval_pass/` unless
-`--targ-jd` is supplied. It also reads the ignored candidate-profile files in
-`user_data/` and writes one directory per job under `materials/`.
+### 5. Generate application materials
 
 ```bash
 npm run makeMaterials -- \
-  --preset rop_ds-v3-0324 \
-  --api-key "$OPENROUTER_API_KEY" \
-  --cover-length 275 \
-  --sleep-min 2.5 \
-  --sleep-max 4.5
+  --preset "rop_g5.6-luna_or" \
+  --api-key "$AEX_OR_API_KEY"
 ```
 
-Presets define the provider, endpoint, model, prompt, sampling values, and
-token limit. Review `config/presets.json` before running a preset because model
-availability, pricing, and provider identifiers can change. Do not store keys
-in presets. The CLI help is the source of truth for currently available preset
-names:
+Without `--targ-jd`, MakeMaterials processes every non-manifest JSON file in `astroapply_eval_pass`. It creates a job-specific directory containing a text bundle with job metadata, tailored title, summary, skills, and cover letter, plus a companion integrity manifest. The standalone command currently requires `--api-key` even when an API-key environment variable is set.
+
+## Reasoning, streaming, and payload diagnostics
+
+Phase-specific reasoning-effort options are passed through as opaque provider values:
+
+- `--jc-reasoning-effort <value>` for JobCloth
+- `--jj-reasoning-effort <value>` for JobJudge
+- `--mm-reasoning-effort <value>` for MakeMaterials
+
+Standalone stage commands also accept `--reasoning-effort` as an alias for their phase-specific option. Omitting the option omits `reasoning_effort` from the provider payload and preserves the provider default.
+
+Use `--hide-reasoning` (aliases: `--hr`, `--hide-reasoning-tokens`) or `ASTROEX_HIDE_REASONING=1` to suppress reasoning output. Standalone commands offer `--show-stream`/`--ss`; the complete pipeline streams response content by default.
+
+`--log-payload` writes the complete outbound LLM payload to the configured log directory with owner-only file permissions. Those payloads can contain resumes, testimonials, and full job descriptions. Enable this only for controlled debugging, protect the log directory, and remove diagnostics when they are no longer needed.
+
+## Runtime data and integrity
+
+Default locations are relative to the project:
+
+| Path                                       | Contents                                                                                 |
+| ------------------------------------------ | ---------------------------------------------------------------------------------------- |
+| `data/acquired_jobs_*.json`                | Canonical Indeed acquisition checkpoints. The pipeline uses `acquired_jobs_indeed.json`. |
+| `data/processed_jobs*.json`                | Normalized jobs. The pipeline uses `processed_jobs_indeed.json`.                         |
+| `data/clothed_jobs*.json`                  | JobCloth output. The pipeline uses `clothed_jobs_indeed.json`.                           |
+| `data/astroapply_eval_pass/*.json`         | Passing JobJudge results.                                                                |
+| `data/astroapply_eval_fail/*.json`         | Failing JobJudge results.                                                                |
+| `data/astroapply_eval_dupe/*.json`         | Jobs already marked evaluated in SQLite.                                                 |
+| `data/jobDB.sqlite`                        | Duplicate-protection and stage-checkpoint database.                                      |
+| `data/statistics/` and `data/*stats*.json` | Per-command execution statistics.                                                        |
+| `logs/`                                    | Human-readable logs and optional sensitive payload diagnostics.                          |
+| `materials/`                               | Generated application-material bundles and statistics.                                   |
+| `materials-deployed/`                      | Local archive populated after deployment.                                                |
+
+ProcessData, JobCloth, JobJudge, and MakeMaterials write `*.manifest.json` files containing the artifact basename, creation metadata, and SHA-256 digest. Verify one with:
 
 ```bash
-npm run job:cloth -- --help
-npm run job:judge -- --help
-npm run makeMaterials -- --help
+npm run start -- artifact verify "./data/processed_jobs_indeed.json"
 ```
 
-## Local configuration
+The command exits non-zero when the manifest is invalid or the artifact hash does not match.
 
-Public templates live in `user_data/*.example`; ignored working copies use the
-same names without `.example`.
+### SQLite repository
 
-| File                          | Purpose                                                   |
-| ----------------------------- | --------------------------------------------------------- |
-| `search_terms.txt`            | One job-search term per line                              |
-| `company_filters.txt`         | Company-name fragments to exclude during processing       |
-| `title_filters.txt`           | Job-title fragments to exclude during processing          |
-| `stacks.txt`                  | Technology keywords used during matching                  |
-| `my_resume.txt`               | Resume text supplied to evaluation and generation prompts |
-| `my_professional_title.txt`   | Current professional title                                |
-| `my_professional_summary.txt` | Current professional summary                              |
-| `my_key_skills.txt`           | Current skills text                                       |
-| `my_testimonials.txt`         | Optional testimonial text                                 |
+`JobRepository` uses Node's built-in SQLite API with strict tables, transactional writes, WAL journaling, full synchronous writes, and a five-second busy timeout. Job records expire after 30 days by default, and the default capacity is 250,000 records. Capacity eviction removes only the oldest discovery-only records; completed evaluation records are protected from capacity eviction until normal expiry.
 
-Blank lines and lines beginning with `#` are ignored in list files. See
-[`user_data/README.md`](user_data/README.md) for privacy guidance.
+On first initialization, `data/jobDB.sqlite` imports valid Indeed records from the retired `data/jobDB.json` exactly once. The legacy JSON file is not changed or deleted. LinkedIn and source-less records are skipped. See [SQLite job-repository lifecycle](docs/jobDB_feature.md).
 
-The versioned configuration files are:
+Stage checkpoints are keyed by stage, input hash, preset, and model. JobCloth, JobJudge, and MakeMaterials record incremental progress so completed work can be skipped after interruption. Changing the input content, preset, or model creates a different checkpoint identity.
 
-- `config/presets.json` — command-specific LLM presets
-- `config/prompts.json` — prompt configuration
-- `prompts/job_cloth.txt` — title-prefilter prompt
-- `prompts/job_judge.txt` — full job-evaluation prompt
-- `prompts/materials.txt` — application-materials prompt
-- `sysprompts/veritas_sys_prompt.txt` — shared system prompt
-
-## Commands
-
-| npm script              | CLI command     | Purpose                                    | Default output                           |
-| ----------------------- | --------------- | ------------------------------------------ | ---------------------------------------- |
-| `npm run acquire:jobs`  | `acquire-jobs`  | Acquire normalized LinkedIn/Indeed records | `data/acquired_jobs_<timestamp>.json`    |
-| `npm run scrape:search` | `scrape-search` | Scrape LinkedIn search cards               | `data/scraped_search_<timestamp>.json`   |
-| `npm run scrape:job`    | `scrape-job`    | Scrape one LinkedIn description            | generated file under `data/`             |
-| `npm run process`       | `processData`   | Merge, filter, and deduplicate             | `data/processed_jobs.json`               |
-| `npm run job:cloth`     | `jobCloth`      | LLM title prefilter                        | `data/clothed_jobs_<timestamp>.json`     |
-| `npm run scrape:jobs`   | `scrape-jobs`   | Scrape retained LinkedIn descriptions      | `data/scraped_jobs_<timestamp>.json`     |
-| `npm run job:judge`     | `jobJudge`      | Evaluate detailed jobs                     | `data/astroapply_eval_{pass,fail,dupe}/` |
-| `npm run makeMaterials` | `makeMaterials` | Generate tailored materials                | `materials/`                             |
-
-Run command-specific help with either form:
+Use the operational commands instead of editing the database directly:
 
 ```bash
-npm run acquire:jobs -- --help
-npm run start -- acquire-jobs --help
+npm run start -- jobdb status
+npm run start -- jobdb verify
+npm run start -- jobdb backup
+npm run start -- jobdb rotate-backups --keep 10
 ```
 
-Four low-level compatibility commands (`rop-c3.7s`, `rop-g41`, `jdd-g41m`, and
-`jdd-gf2.0t`) are also listed by `npm run start -- --help`. New workflows should
-prefer `jobCloth`, `jobJudge`, and `makeMaterials` with external presets.
+`verify` exits non-zero when SQLite reports an integrity failure. `backup` creates a WAL-checkpointed timestamped `.bak` snapshot beside the database. `rotate-backups` removes older timestamped backups only; it never removes the live database or retired JSON file.
 
-## JobDB, logging, and artifacts
+## Cleanup and deployment safety
 
-`acquire-jobs`, `scrape-search`, `scrape-job`, `scrape-jobs`, and `jobJudge`
-share `data/jobDB.json`. It records discovery, description, and evaluation
-checkpoints for 30 days and is enabled by default. Use `--no-use-jobdb` only
-when an intentional replay is worth the duplicate requests and API calls.
+`run-pipeline --clean` removes the configured acquired, processed, and clothed pipeline files plus the three evaluation directories before processing. It preserves `jobDB.sqlite`, logs, generated materials, and unrelated timestamped acquisition files. Because `processData` scans all `acquired_jobs_*.json` files in its input directory, use an isolated data directory when you need a completely clean input set.
 
-Common logging controls include:
-
-- `--log-dir <path>` — log directory; defaults to `logs/`
-- `--log-file <name>` — base log filename; a timestamp is prepended
-- `--log-level <debug|info|warn|error>` — minimum emitted severity
-- `--disable-file-logging` — write no log file
-- `--no-color`, `NO_COLOR=1`, or `ASTROEX_NO_COLOR=1` — disable terminal color
-- `--no-verbose` or `--quiet` — reduce high-volume diagnostic output
-
-File logs are redacted JSON Lines records. `--log-payload`, `--show-reasoning`,
-and `--show-stream` can expose sensitive prompts or provider output; enable them
-only for deliberate local debugging.
-
-Common generated artifacts include:
-
-- `data/acquired_jobs_*.json` — source-aware acquisition results
-- `data/scraped_search_*.json` — LinkedIn search cards
-- `data/processed_jobs*.json` — filtered and deduplicated records
-- `data/clothed_jobs_*.json` — LLM-prefiltered records
-- `data/scraped_jobs_*.json` — detailed LinkedIn records in NDJSON form
-- `data/astroapply_eval_*/` — evaluation results
-- `data/job_judge_reports/` — Markdown evaluation reports
-- `data/*-stats_*.json` and `materials/*stats*.json` — run statistics
-- `logs/` — application and optional payload logs
-- `materials/` — generated application materials
-
-These locations are runtime state and are ignored by Git.
-
-## Development
+Deployment is opt-in:
 
 ```bash
-npm run build
-npm run lint
-npm run format:check
-
-npm run test:acquisition
-npm run test:file-discovery
-npm run test:jobdb-flow
-npm run test:logging
-npm run test:statistics
+npm run pipeline -- \
+  --deploy \
+  --deploy-destination "RemoteName:/path/to/destination"
 ```
 
-The project uses TypeScript, Biome, Node's test runner, and an MIT license. See
-[`CHANGELOG.md`](CHANGELOG.md) for release history and
-[`VERSION`](VERSION) for the plain-text current version. Version 5.0.0 follows
-[Semantic Versioning](https://semver.org/).
+The deployment stage flattens generated `.txt` files into a temporary staging directory, renames duplicate basenames to prevent overwrites, and invokes `rclone copy`. After `rclone` succeeds—or immediately when no `.txt` files are found—**all entries in the local materials directory are moved to the local deployed-materials archive**. Confirm the destination and local directory overrides before enabling this option.
 
-## Acknowledgments
+## Logging and machine-readable output
 
-- AstroEX's source-neutral acquisition layer vendors and adapts HTTP, proxy,
-  retry, text-conversion, LinkedIn, and Indeed provider code from
-  [`ts-jobspy`](https://github.com/alpharomercoma/ts-jobspy) by
-  [Alpha Romer Coma](https://github.com/alpharomercoma), used under the MIT
-  License. AstroEX ships the adapted code locally and does not require
-  `ts-jobspy` at runtime.
-- `ts-jobspy` is itself a TypeScript port of
-  [`python-jobspy`](https://github.com/speedyapply/JobSpy), originally by Cullen
-  Watson and Zachary Hampton.
-- AstroEX originated from
-  [`linkedin-jobs-scraper`](https://github.com/llpujol/linkedin-jobs-scraper)
-  by [llpujol](https://github.com/llpujol).
+Common CLI controls include:
 
-See [`docs/jobspy-integration.md`](docs/jobspy-integration.md) for the precise
-scope of the vendored acquisition code and [`LICENSE.md`](LICENSE.md) for this
-project's license.
+- `--log-dir <path>` and `--log-file <name>`
+- `--log-level trace|debug|info|success|warn|error|fatal`
+- `--log-format pretty|json`
+- `--disable-file-logging`
+- `--no-banner` and `--no-color`
+- `--json` for machine-oriented output where supported
+- `--verbose`/`-v` on commands that expose verbose diagnostics
+
+Secrets and common credential-shaped fields are redacted from structured logs. Payload-diagnostic files are intentionally exempt because their purpose is to capture complete requests.
+
+## Command reference
+
+```text
+run-pipeline   Run the complete workflow with preflight and optional deployment.
+acquire-jobs   Acquire canonical Indeed records.
+processData    Normalize, filter, and deduplicate acquisition artifacts.
+jobCloth       Perform fast title-level LLM prefiltering.
+jobJudge       Perform detailed applicant/job alignment evaluation.
+makeMaterials  Generate tailored application materials for passing jobs.
+preflight      Validate paths, profile files, presets, API key, and SQLite.
+jobdb          Inspect, verify, back up, or rotate the SQLite repository.
+artifact       Verify an artifact against its SHA-256 manifest.
+```
+
+Run `npm run start -- <command> --help` for the authoritative option list.
+
+## Development and validation
+
+```bash
+npm run typecheck          # Strict TypeScript check without emitting files
+npm test                   # Clean-build dist/ and run all Node test files
+npm run check              # Typecheck, then clean-build and run all tests
+npm run lint               # Run Biome checks
+npm run format:check       # Check Biome formatting
+npm run audit              # Run npm's dependency audit
+```
+
+Targeted scripts include `test:jobdb-flow`, `test:statistics`, `test:acquisition`, `test:logging`, `test:jobcloth-payload`, and `test:remote-only`.
+
+The current `lint`, `lint:fix`, `format`, and `format:check` npm scripts remove `dist/` before running Biome. Run `npm run build` afterward when you need compiled CLI output.
+
+Tests are JavaScript files under `test/` and exercise the compiled modules in `dist/`. `npm test` rebuilds `dist/` first.
+
+## Troubleshooting
+
+- **Search-term file not found:** for `run-pipeline`, use a filename relative to `ASTROEX_PROFILE_DIR` or an absolute path. Standalone `acquire-jobs` accepts a normal filesystem path.
+- **No jobs reach JobJudge:** do not use `acquire-jobs --description-mode none`; JobJudge skips jobs without `descriptionText`.
+- **Unexpected older jobs are processed:** `processData` merges every `acquired_jobs_*.json` in its input directory. Move unrelated artifacts or select an isolated directory.
+- **A completed stage is skipped:** checkpoint reuse requires matching input content, preset, and model. Change one of those inputs or inspect the repository before removing state.
+- **Preflight changes the filesystem:** it creates missing runtime directories, writes and removes owner-readable probe files, and initializes/verifies `jobDB.sqlite`; it makes no network requests.
+- **Deployment fails:** confirm `rclone` is in `PATH`, the destination is configured, and the current credentials can write to it.
+
+## LinkedIn retirement
+
+LinkedIn URLs, artifacts, and repository records are not accepted by the active pipeline. Historical files are left untouched as user data, but they are neither imported into SQLite nor passed through ProcessData.
+
+## Additional documentation
+
+- [SQLite job-repository lifecycle](docs/jobDB_feature.md)
+- [Indeed acquisition integration](docs/jobspy-integration.md)
+
+## License
+
+AstroEX is licensed under the MIT License; see [LICENSE.md](LICENSE.md). The Indeed acquisition implementation includes adapted components from `ts-jobspy-main` under the MIT License; see [Indeed acquisition integration](docs/jobspy-integration.md).

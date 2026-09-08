@@ -1,3 +1,5 @@
+import type { AxiosResponse } from "axios";
+
 /**
  * Vendored and adapted from ts-jobspy-main/src/indeed (MIT).
  * The query is intentionally kept local so AstroEX remains standalone and
@@ -66,6 +68,10 @@ interface IndeedResponse {
 		};
 	};
 }
+
+type IndeedSearch = NonNullable<
+	NonNullable<IndeedResponse["data"]>["jobSearch"]
+>;
 
 function countryCode(country?: string): { domain: string; code: string } {
 	const key = (country ?? "usa").toLowerCase().replace(/\s+/g, "");
@@ -157,14 +163,14 @@ export async function acquireIndeedJobs(options: {
 	descriptionFormat: "markdown" | "html" | "plain";
 	proxies?: string[];
 	userAgent?: string;
+	apiKey?: string;
 }): Promise<CanonicalAcquiredJob[]> {
-	const apiKey = process.env.INDEED_API_KEY?.trim();
-	if (!apiKey) {
+	const apiKey = options.apiKey ?? process.env.ASTROEX_INDEED_API_KEY;
+	if (!apiKey?.trim()) {
 		throw new Error(
-			"INDEED_API_KEY is required when the Indeed acquisition provider is enabled.",
+			"Missing Indeed client key. Set ASTROEX_INDEED_API_KEY before acquiring jobs.",
 		);
 	}
-
 	const session = createJobSpySession({
 		proxies: options.proxies,
 		userAgent: options.userAgent,
@@ -176,7 +182,7 @@ export async function acquireIndeedJobs(options: {
 	const wanted = options.resultsWanted + (options.offset ?? 0);
 
 	while (jobs.length < wanted) {
-		const query = QUERY_TEMPLATE.replace(
+		const query: string = QUERY_TEMPLATE.replace(
 			"{what}",
 			options.searchTerm ? `what: "${escapeGraphQL(options.searchTerm)}"` : "",
 		)
@@ -188,19 +194,20 @@ export async function acquireIndeedJobs(options: {
 			)
 			.replace("{cursor}", cursor ? `cursor: "${escapeGraphQL(cursor)}"` : "")
 			.replace("{filters}", buildIndeedFilters(options));
-		const response = await session.post<IndeedResponse>(
-			INDEED_API_URL,
-			{ query },
-			{
-				headers: {
-					...INDEED_HEADERS,
-					"indeed-api-key": apiKey,
-					"indeed-co": country.code,
+		const response: AxiosResponse<IndeedResponse> =
+			await session.post<IndeedResponse>(
+				INDEED_API_URL,
+				{ query },
+				{
+					headers: {
+						...INDEED_HEADERS,
+						"indeed-api-key": apiKey,
+						"indeed-co": country.code,
+					},
+					timeout: 10_000,
 				},
-				timeout: 10_000,
-			},
-		);
-		const search = response.data.data?.jobSearch;
+			);
+		const search: IndeedSearch | undefined = response.data.data?.jobSearch;
 		const results = search?.results ?? [];
 		if (!results.length) break;
 

@@ -29,6 +29,9 @@ test("file logging emits redacted JSONL records", async () => {
 			attempt: 2,
 		});
 		await closeFileLogging();
+		if (process.platform !== "win32") {
+			assert.equal((await fs.stat(filePath)).mode & 0o077, 0);
+		}
 		const [line] = (await fs.readFile(filePath, "utf-8")).trim().split("\n");
 		const event = JSON.parse(line);
 		assert.deepEqual(event, {

@@ -1,10 +1,11 @@
 MIT License
 
 Copyright (c) 2023 llpujol
-Copyright (c) 2025 tjenkel
+Copyright (c) 2025 AstroEX Contributors
 
 This project was originally created as "LinkedIn Jobs Scraper" by llpujol
-and has been modified and renamed to "AstroEX" (formerly "AstroFind") by tjenkel.
+and was later modified and renamed to "AstroEX" (formerly "AstroFind") by
+AstroEX Contributors.
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal

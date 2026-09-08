@@ -1,10 +1,9 @@
-export { addDebugScrapeCommand } from "./debugScrape";
 export { addAcquireJobsCommand } from "./acquireJobs";
-export { addEr44zzModesCommands } from "./er44zzModes";
+export { addArtifactCommand } from "./artifact";
 export { addJobClothCommand } from "./jobCloth";
 export { addJobJudgeCommand } from "./jobJudge";
+export { addJobDbCommand } from "./jobDb";
 export { addMakeMaterialsCommands } from "./makeMaterials";
 export { addProcessDataCommand } from "./processData";
-export { addScrapeJobCommand } from "./scrapeJob";
-export { addScrapeJobsCommand } from "./scrapeJobs";
-export { addScrapeSearchCommand } from "./scrapeSearch";
+export { addPreflightCommand } from "./preflight";
+export { addRunPipelineCommand } from "./runPipeline";

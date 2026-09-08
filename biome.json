@@ -6,7 +6,16 @@
 		"useIgnoreFile": false
 	},
 	"files": {
-		"ignoreUnknown": false
+		"ignoreUnknown": false,
+		"ignore": [
+			"data/**",
+			"logs/**",
+			"materials/**",
+			"materials-deployed/**",
+			"profile/**",
+			"dist/**",
+			"coverage/**"
+		]
 	},
 	"formatter": {
 		"enabled": true,

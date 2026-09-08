@@ -2,6 +2,9 @@ import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import type { Arguments, Argv } from "yargs";
 import { isCanonicalAcquiredJob, toLegacyJob } from "../acquisition/normalize";
+import { writeArtifactManifest } from "../artifactManifest";
+import type { JobInterface } from "../models";
+import { getProfileDirectory } from "../runtimePaths";
 import {
 	type StatisticsCollector,
 	createStatisticsCollector,
@@ -9,488 +12,368 @@ import {
 import type { GlobalArgs } from "../types";
 import {
 	closeFileLogging,
+	createLogger,
 	formatDate,
 	formatDuration,
 	initializeFileLogging,
 	log,
 } from "../utils";
 
-// Job interface for type safety
-interface JobInterface {
-	id: string;
-	title: string;
-	company: string;
-	location: string;
-	url: string;
-	descriptionHtml?: string;
-	postedDate?: string | Date;
+const logger = createLogger("ProcessData");
+
+export interface ProcessDataOptions {
+	inputDirectory: string;
+	outputFile: string;
+	companyFilters?: string[];
+	titleFilters?: string[];
+	batchSize?: number;
+	sleepMinMs?: number;
+	sleepMaxMs?: number;
 }
 
-/**
- * Stream processor for memory-efficient data processing
- */
-export class StreamProcessor<T> {
-	private items: T[] = [];
-	private batchSize: number;
-	private processBatch: (batch: T[]) => Promise<void>;
-
-	constructor(batchSize: number, processBatch: (batch: T[]) => Promise<void>) {
-		this.batchSize = batchSize;
-		this.processBatch = processBatch;
-	}
-
-	async add(item: T): Promise<void> {
-		this.items.push(item);
-
-		if (this.items.length >= this.batchSize) {
-			await this.flush();
-		}
-	}
-
-	async flush(): Promise<void> {
-		if (this.items.length === 0) return;
-
-		const batch = [...this.items];
-		this.items = [];
-
-		try {
-			await this.processBatch(batch);
-		} catch (error) {
-			log("ProcessData", `Error processing batch: ${error}`, "error");
-			throw error;
-		}
-	}
-
-	async finish(): Promise<void> {
-		await this.flush();
-	}
-}
-
-/**
- * Stream processing function for memory-efficient job data processing
- */
-async function streamProcessJobData(
-	inputDir: string,
-	outputFile: string,
-	companyFilters: string,
-	titleFilters: string,
-	stats: StatisticsCollector,
-): Promise<{
+export interface ProcessDataResult {
 	filesProcessed: number;
 	recordsMerged: number;
 	duplicatesRemoved: number;
 	filteredEntries: number;
+	retiredOrInvalidEntries: number;
 	outputRecordCount: number;
-}> {
-	const startTime = performance.now();
+}
 
-	// Sets for deduplication (much more memory efficient than storing full objects)
-	const uniqueIds = new Set<string>();
-	const titleCompanyMap = new Map<string, JobInterface>();
-	const filteredJobs: JobInterface[] = [];
+const DEFAULT_BATCH_SIZE = 1_000;
 
-	let filesProcessed = 0;
-	let recordsMerged = 0;
-	let duplicatesRemoved = 0;
-	let filteredEntries = 0;
-	let _totalRecords = 0;
+function normalizeFilter(values: string[]): string[] {
+	return values.map((value) => value.trim().toLowerCase()).filter(Boolean);
+}
 
-	// Load filter lists
-	const rootDirectory = path.resolve(__dirname, "..", "..");
-	const companyFiltersFile = path.join(
-		rootDirectory,
-		"user_data",
-		"company_filters.txt",
-	);
-	const titleFiltersFile = path.join(
-		rootDirectory,
-		"user_data",
-		"title_filters.txt",
-	);
-
-	let defaultCompaniesToFilter: string[] = [];
-	let defaultTitlesToFilter: string[] = [];
-
+function isIndeedUrl(value: unknown): value is string {
+	if (typeof value !== "string") return false;
 	try {
-		const [companyContent, titleContent] = await Promise.all([
-			fs.readFile(companyFiltersFile, "utf-8").catch(() => ""),
-			fs.readFile(titleFiltersFile, "utf-8").catch(() => ""),
-		]);
-
-		defaultCompaniesToFilter = companyContent
-			.split("\n")
-			.map((line) => line.trim())
-			.filter((line) => line.length > 0 && !line.startsWith("#"));
-
-		defaultTitlesToFilter = titleContent
-			.split("\n")
-			.map((line) => line.trim())
-			.filter((line) => line.length > 0 && !line.startsWith("#"));
-	} catch (error) {
-		log("ProcessData", `Error loading filter files: ${error}`, "warn");
+		return new URL(value).hostname.toLowerCase().endsWith("indeed.com");
+	} catch {
+		return false;
 	}
+}
 
-	// Parse additional filters from arguments
-	const additionalCompanies = companyFilters
-		.split(",")
-		.map((s) => s.trim().toLowerCase())
-		.filter(Boolean);
-	const additionalTitles = titleFilters
-		.split(",")
-		.map((s) => s.trim().toLowerCase())
-		.filter(Boolean);
-
-	// Combine default and additional filters
-	const allCompaniesToFilter = [
-		...defaultCompaniesToFilter,
-		...additionalCompanies,
-	];
-	const allTitlesToFilter = [...defaultTitlesToFilter, ...additionalTitles];
-
-	log(
-		"ProcessData",
-		`Loaded ${allCompaniesToFilter.length} company filters and ${allTitlesToFilter.length} title filters`,
+/**
+ * Accept the old AstroEX job shape only when its URL unambiguously belongs to
+ * Indeed. This preserves existing Indeed artifacts without allowing retired
+ * source artifacts through the compatibility path.
+ */
+function isLegacyIndeedJob(value: unknown): value is JobInterface {
+	if (!value || typeof value !== "object") return false;
+	const job = value as Partial<JobInterface>;
+	return (
+		typeof job.id === "string" &&
+		typeof job.title === "string" &&
+		job.title.trim().length > 0 &&
+		typeof job.company === "string" &&
+		job.company.trim().length > 0 &&
+		isIndeedUrl(job.url)
 	);
+}
 
-	// Find legacy LinkedIn search artifacts and source-neutral acquisition artifacts.
-	const files = await fs.readdir(inputDir);
-	const scrapedSearchFiles = files.filter(
-		(file) =>
-			(file.startsWith("scraped_search_") ||
-				file.startsWith("acquired_jobs_")) &&
-			file.endsWith(".json"),
+function normalizeIndeedJob(value: unknown): JobInterface | undefined {
+	if (isCanonicalAcquiredJob(value)) return toLegacyJob(value);
+	if (!isLegacyIndeedJob(value)) return undefined;
+	return { ...value, source: "indeed" };
+}
+
+async function loadDefaultFilters(): Promise<{
+	companyFilters: string[];
+	titleFilters: string[];
+}> {
+	const filterDirectory = getProfileDirectory();
+	const [companyContent, titleContent] = await Promise.all([
+		fs
+			.readFile(path.join(filterDirectory, "company_filters.txt"), "utf8")
+			.catch(() => ""),
+		fs
+			.readFile(path.join(filterDirectory, "title_filters.txt"), "utf8")
+			.catch(() => ""),
+	]);
+	return {
+		companyFilters: normalizeFilter(companyContent.split(/\r?\n/)),
+		titleFilters: normalizeFilter(titleContent.split(/\r?\n/)),
+	};
+}
+
+async function writeJsonAtomically(
+	outputFile: string,
+	value: unknown,
+): Promise<void> {
+	const outputDirectory = path.dirname(outputFile);
+	await fs.mkdir(outputDirectory, { recursive: true });
+	const temporaryFile = path.join(
+		outputDirectory,
+		`.${path.basename(outputFile)}.${process.pid}.${Date.now()}.tmp`,
 	);
-
-	if (scrapedSearchFiles.length === 0) {
-		stats.recordWarning("No acquisition artifacts found", { inputDir });
-		stats.recordSuccess("processData.complete", {
-			filesProcessed: 0,
-			outputRecordCount: 0,
+	try {
+		await fs.writeFile(temporaryFile, JSON.stringify(value, null, 2), {
+			encoding: "utf8",
+			mode: 0o600,
 		});
-		log(
-			"ProcessData",
-			"No scraped_search_*.json or acquired_jobs_*.json files found. Skipping processing.",
-			"warn",
-		);
-		return {
-			filesProcessed: 0,
-			recordsMerged: 0,
-			duplicatesRemoved: 0,
-			filteredEntries: 0,
-			outputRecordCount: 0,
-		};
+		await fs.rename(temporaryFile, outputFile);
+	} catch (error) {
+		await fs.rm(temporaryFile, { force: true }).catch(() => undefined);
+		throw error;
 	}
+}
 
-	stats.incrementCounter("files.found", scrapedSearchFiles.length);
+function isFiltered(
+	job: JobInterface,
+	companyFilters: string[],
+	titleFilters: string[],
+): boolean {
+	const company = job.company.toLowerCase();
+	const title = job.title.toLowerCase();
+	return (
+		companyFilters.some((filter) => company.includes(filter)) ||
+		titleFilters.some((filter) => title.includes(filter))
+	);
+}
 
-	log("ProcessData", `Found ${scrapedSearchFiles.length} files to process`);
+function deduplicationKey(job: JobInterface): string {
+	return `${job.title.toLowerCase().trim()}\u0000${job.company.toLowerCase().trim()}`;
+}
 
-	// Process each file
-	for (const inputFile of scrapedSearchFiles) {
-		const inputPath = path.join(inputDir, inputFile);
-		log("ProcessData", `Processing file: ${inputFile}`);
+/**
+ * Normalize, deduplicate, and filter canonical or historical Indeed artifacts.
+ * JSON-array output is deliberately retained for downstream compatibility.
+ */
+export async function processAcquiredJobs(
+	options: ProcessDataOptions,
+	stats?: StatisticsCollector,
+): Promise<ProcessDataResult> {
+	const startedAt = performance.now();
+	const batchSize = options.batchSize ?? DEFAULT_BATCH_SIZE;
+	if (!Number.isInteger(batchSize) || batchSize <= 0)
+		throw new Error("batchSize must be a positive integer");
+	const sleepMinMs = options.sleepMinMs ?? 0;
+	const sleepMaxMs = options.sleepMaxMs ?? sleepMinMs;
+	if (sleepMinMs < 0 || sleepMaxMs < sleepMinMs)
+		throw new Error("sleep limits must be non-negative and ordered");
 
+	const defaults = await loadDefaultFilters();
+	const companyFilters = normalizeFilter([
+		...defaults.companyFilters,
+		...(options.companyFilters ?? []),
+	]);
+	const titleFilters = normalizeFilter([
+		...defaults.titleFilters,
+		...(options.titleFilters ?? []),
+	]);
+	const outputFile = path.resolve(options.outputFile);
+	const entries = await fs.readdir(options.inputDirectory, {
+		withFileTypes: true,
+	});
+	const inputFiles = entries
+		.filter(
+			(entry) =>
+				entry.isFile() &&
+				entry.name.startsWith("acquired_jobs_") &&
+				entry.name.endsWith(".json"),
+		)
+		.map((entry) => path.join(options.inputDirectory, entry.name))
+		.filter((file) => path.resolve(file) !== outputFile)
+		.sort();
+
+	const result: ProcessDataResult = {
+		filesProcessed: 0,
+		recordsMerged: 0,
+		duplicatesRemoved: 0,
+		filteredEntries: 0,
+		retiredOrInvalidEntries: 0,
+		outputRecordCount: 0,
+	};
+	const seenIds = new Set<string>();
+	const seenTitleCompanies = new Set<string>();
+	const output: JobInterface[] = [];
+
+	for (const inputFile of inputFiles) {
+		let values: unknown;
 		try {
-			const fileContent = await fs.readFile(inputPath, "utf-8");
-			stats.incrementCounter("files.opened", 1);
-			stats.incrementCounter("files.read", 1);
-			const parsed: unknown = JSON.parse(fileContent);
-
-			if (!Array.isArray(parsed)) {
-				stats.recordWarning("Input file is not a JSON array", { inputFile });
-				log("ProcessData", `Skipping ${inputFile}: not a JSON array`, "warn");
-				continue;
-			}
-			const jobs: JobInterface[] = parsed.map((job) =>
-				isCanonicalAcquiredJob(job) ? toLegacyJob(job) : (job as JobInterface),
-			);
-
-			log("ProcessData", `Processing ${jobs.length} jobs from ${inputFile}`);
-			recordsMerged += jobs.length;
-			_totalRecords += jobs.length;
-
-			// Process jobs with stream processing and deduplication
-			for (const job of jobs) {
-				// Check for duplicates by ID
-				if (uniqueIds.has(job.id)) {
-					duplicatesRemoved++;
-					continue;
-				}
-
-				// Check for duplicates by title/company combination
-				const titleCompanyKey = `${job.title.toLowerCase()}::${job.company.toLowerCase()}`;
-				if (titleCompanyMap.has(titleCompanyKey)) {
-					duplicatesRemoved++;
-					continue;
-				}
-
-				// Apply filters
-				const companyName = (job.company || "").toLowerCase();
-				const jobTitle = (job.title || "").toLowerCase();
-
-				const isCompanyFiltered = allCompaniesToFilter.some((filterName) =>
-					companyName.includes(filterName),
-				);
-
-				const isTitleFiltered = allTitlesToFilter.some((filterTerm) =>
-					jobTitle.includes(filterTerm),
-				);
-
-				if (isCompanyFiltered || isTitleFiltered) {
-					filteredEntries++;
-					continue;
-				}
-
-				// Add to processed results
-				uniqueIds.add(job.id);
-				titleCompanyMap.set(titleCompanyKey, job);
-				filteredJobs.push(job);
-
-				// Periodic memory cleanup and progress logging
-				if (filteredJobs.length % 1000 === 0) {
-					log(
-						"ProcessData",
-						`Processed ${filteredJobs.length} jobs so far, ${duplicatesRemoved} duplicates removed, ${filteredEntries} filtered`,
-					);
-
-					// Small delay to allow garbage collection
-					await new Promise((resolve) => setTimeout(resolve, 10));
-				}
-			}
-
-			filesProcessed++;
-			stats.incrementCounter("files.processed", 1);
+			values = JSON.parse(await fs.readFile(inputFile, "utf8"));
 		} catch (error) {
-			const errorMessage =
-				error instanceof Error ? error.message : String(error);
-			stats.recordError(new Error(errorMessage), { inputFile });
+			const message = error instanceof Error ? error.message : String(error);
+			stats?.recordWarning("Unreadable acquisition artifact", {
+				inputFile,
+				message,
+			});
 			log(
 				"ProcessData",
-				`Error processing file ${inputFile}: ${errorMessage}`,
-				"error",
+				`Skipping unreadable artifact ${inputFile}: ${message}`,
+				"warn",
 			);
+			continue;
+		}
+		if (!Array.isArray(values)) {
+			stats?.recordWarning("Acquisition artifact is not a JSON array", {
+				inputFile,
+			});
+			log("ProcessData", `Skipping non-array artifact ${inputFile}`, "warn");
+			continue;
+		}
+
+		result.filesProcessed++;
+		result.recordsMerged += values.length;
+		for (const value of values) {
+			const job = normalizeIndeedJob(value);
+			if (!job) {
+				result.retiredOrInvalidEntries++;
+				continue;
+			}
+			const titleCompany = deduplicationKey(job);
+			if (seenIds.has(job.id) || seenTitleCompanies.has(titleCompany)) {
+				result.duplicatesRemoved++;
+				continue;
+			}
+			if (isFiltered(job, companyFilters, titleFilters)) {
+				result.filteredEntries++;
+				continue;
+			}
+			seenIds.add(job.id);
+			seenTitleCompanies.add(titleCompany);
+			output.push(job);
+			if (output.length % batchSize === 0) {
+				log(
+					"ProcessData",
+					`Accepted ${output.length} Indeed jobs so far`,
+					"info",
+				);
+				if (sleepMaxMs > 0) {
+					const delay = sleepMinMs + Math.random() * (sleepMaxMs - sleepMinMs);
+					await new Promise((resolve) => setTimeout(resolve, delay));
+				}
+			}
 		}
 	}
 
-	// Write output file
-	log("ProcessData", `Writing ${filteredJobs.length} jobs to ${outputFile}`);
-
-	const writeTimer = stats.startTimer("file.write");
-	await fs.writeFile(
-		outputFile,
-		JSON.stringify(filteredJobs, null, 2),
-		"utf-8",
+	result.outputRecordCount = output.length;
+	const writeTimer = stats?.startTimer("file.write");
+	await writeJsonAtomically(outputFile, output);
+	await writeArtifactManifest(outputFile, "processData", {
+		inputFiles: inputFiles.map((file) => path.basename(file)),
+		result,
+	});
+	if (writeTimer) stats?.endTimer(writeTimer);
+	stats?.incrementCounter("files.found", inputFiles.length);
+	stats?.incrementCounter("files.processed", result.filesProcessed);
+	stats?.incrementCounter("files.written", 1);
+	stats?.incrementCounter("data.recordsProcessed", result.recordsMerged);
+	stats?.incrementCounter("data.recordsFiltered", result.filteredEntries);
+	stats?.incrementCounter("data.duplicatesRemoved", result.duplicatesRemoved);
+	stats?.incrementCounter(
+		"data.retiredOrInvalid",
+		result.retiredOrInvalidEntries,
 	);
-	stats.endTimer(writeTimer);
-	stats.incrementCounter("files.written", 1);
-	stats.incrementCounter("data.recordsProcessed", recordsMerged);
-	stats.incrementCounter("data.recordsFiltered", filteredEntries);
-	stats.incrementCounter("data.duplicatesRemoved", duplicatesRemoved);
-	stats.incrementCounter("data.filesProcessed", filesProcessed);
-	stats.recordSuccess("processData.complete", {
-		filesProcessed,
-		outputRecordCount: filteredJobs.length,
+	stats?.recordSuccess("processData.complete", result);
+	logger.success("Processed Indeed acquisition artifacts", {
+		...result,
+		duration: formatDuration(performance.now() - startedAt),
 	});
-
-	const endTime = performance.now();
-	const duration = formatDuration(endTime - startTime);
-
-	log("ProcessData", `Stream processing completed in ${duration}`, "info", {
-		duration,
-		filesProcessed,
-		recordsMerged,
-		duplicatesRemoved,
-		filteredEntries,
-		outputRecordCount: filteredJobs.length,
-		uniqueJobs: uniqueIds.size,
-		memoryEfficiency: "Sets used for deduplication instead of full objects",
-	});
-
-	return {
-		filesProcessed,
-		recordsMerged,
-		duplicatesRemoved,
-		filteredEntries,
-		outputRecordCount: filteredJobs.length,
-	};
+	return result;
 }
 
 export const addProcessDataCommand = (
 	yargs: Argv<GlobalArgs>,
-): Argv<GlobalArgs> => {
-	return yargs.command({
+): Argv<GlobalArgs> =>
+	yargs.command({
 		command: "processData",
-		describe:
-			"Processes legacy scraped_search_* and source-neutral acquired_jobs_* artifacts using stream processing for memory efficiency.",
-		builder: (yy: Argv<GlobalArgs>) => {
-			return (yy as Argv<GlobalArgs & ProcessDataCli>)
+		describe: "Process canonical and historical Indeed acquisition artifacts.",
+		builder: (yy) =>
+			(yy as Argv<GlobalArgs & ProcessDataCli>)
 				.option("input-dir", {
 					alias: "i",
 					type: "string",
-					description:
-						"Path to input artifacts (processes scraped_search_*.json and acquired_jobs_*.json by default)",
 					default: "./data",
+					description: "Directory containing acquired_jobs_*.json artifacts.",
 				})
 				.option("output-file", {
 					alias: "o",
 					type: "string",
-					description:
-						"Path to the output JSON file to save processed job data (appends timestamp by default)",
 					default: "./data/processed_jobs.json",
+					description: "Output JSON file; replaced atomically on success.",
 				})
 				.option("company-filters", {
 					type: "string",
-					description: "Comma-separated list of company names to filter out.",
 					default: "",
+					description: "Comma-separated company names to exclude.",
 				})
 				.option("title-filters", {
 					type: "string",
-					description: "Comma-separated list of job titles to filter out.",
 					default: "",
+					description: "Comma-separated title terms to exclude.",
 				})
 				.option("batch-size", {
 					alias: "b",
 					type: "number",
-					description: "Batch size for stream processing. Defaults to 1000.",
-					default: 1000,
+					default: DEFAULT_BATCH_SIZE,
+					description: "Progress-reporting interval.",
 				})
 				.option("sleep-min", {
 					alias: "smin",
 					type: "number",
-					description:
-						"Minimum sleep between batches in seconds. Defaults to 0.01 (10ms).",
-					default: 0.01,
+					default: 0,
+					description: "Minimum yield delay between batches, in seconds.",
 				})
 				.option("sleep-max", {
 					alias: "smax",
 					type: "number",
-					description:
-						"Maximum sleep between batches in seconds. Defaults to 0.1 (100ms).",
-					default: 0.1,
+					default: 0,
+					description: "Maximum yield delay between batches, in seconds.",
 				})
 				.check((argv) => {
 					if (typeof argv["input-dir"] !== "string")
 						throw new Error("input-dir must be a string");
 					if (typeof argv["output-file"] !== "string")
 						throw new Error("output-file must be a string");
-					if (typeof argv["company-filters"] !== "string")
-						throw new Error("company-filters must be a string");
-					if (typeof argv["title-filters"] !== "string")
-						throw new Error("title-filters must be a string");
-					if (typeof argv["batch-size"] !== "number")
-						throw new Error("batch-size must be a number");
-					if (typeof argv["sleep-min"] !== "number")
-						throw new Error("sleep-min must be a number");
-					if (typeof argv["sleep-max"] !== "number")
-						throw new Error("sleep-max must be a number");
+					if (!Number.isInteger(argv["batch-size"]) || argv["batch-size"] <= 0)
+						throw new Error("batch-size must be a positive integer");
+					if (argv["sleep-min"] < 0 || argv["sleep-max"] < argv["sleep-min"])
+						throw new Error(
+							"sleep-max must be greater than or equal to sleep-min",
+						);
 					return true;
-				}) as Argv<GlobalArgs & ProcessDataCli>;
-		},
+				}) as Argv<GlobalArgs & ProcessDataCli>,
 		handler: async (argv: Arguments<GlobalArgs & ProcessDataCli>) => {
-			// Initialize statistics collection
 			const stats = createStatisticsCollector("processData");
 			stats.startCollection();
-
-			const startTime = performance.now();
-
 			if (!argv.disableFileLogging) {
-				const logDir = typeof argv.logDir === "string" ? argv.logDir : "./logs";
-				const logFile =
-					typeof argv.logFile === "string" ? argv.logFile : "astroex.log";
 				initializeFileLogging(
-					logDir,
-					`${formatDate(new Date(), "yyyyMMdd_HHmmss")}_ProcessData_${logFile}`,
+					argv.logDir ?? "./logs",
+					`${formatDate(new Date(), "yyyyMMdd_HHmmss")}_ProcessData_${argv.logFile ?? "astroex.log"}`,
 					"ProcessData",
 				);
 			}
-			log("ProcessData", "Starting stream data processing command...");
-
-			// Map dashed args to camelCase
-			const inputDir = argv["input-dir"];
-			const outputFile = argv["output-file"];
-			const companyFilters = argv["company-filters"];
-			const titleFilters = argv["title-filters"];
-			const batchSize = argv["batch-size"];
-			const sleepMin = argv["sleep-min"];
-			const sleepMax = argv["sleep-max"];
-
-			log("ProcessData", "Command started", "info", {
-				inputDir,
-				outputFile,
-				companyFilters,
-				titleFilters,
-				batchSize,
-				sleepMin,
-				sleepMax,
-			});
-
 			try {
-				const fileStats = await streamProcessJobData(
-					inputDir,
-					outputFile,
-					companyFilters,
-					titleFilters,
+				await processAcquiredJobs(
+					{
+						inputDirectory: argv["input-dir"],
+						outputFile: argv["output-file"],
+						companyFilters: argv["company-filters"].split(","),
+						titleFilters: argv["title-filters"].split(","),
+						batchSize: argv["batch-size"],
+						sleepMinMs: argv["sleep-min"] * 1_000,
+						sleepMaxMs: argv["sleep-max"] * 1_000,
+					},
 					stats,
 				);
-
-				const endTime = performance.now();
-				const duration = formatDuration(endTime - startTime);
-
-				// Generate and display statistics
-				const summary = stats.endCollection();
-
-				log(
-					"ProcessData",
-					`Stream data processing completed in ${duration}.`,
-					"log",
-					{
-						duration,
-						filesProcessed: fileStats.filesProcessed,
-						recordsMerged: fileStats.recordsMerged,
-						duplicatesRemoved: fileStats.duplicatesRemoved,
-						filteredEntries: fileStats.filteredEntries,
-						outputRecordCount: fileStats.outputRecordCount,
-						statistics: summary,
-					},
-				);
-
-				// Export statistics to file
-				const statsFile = path.join(
-					path.dirname(outputFile),
-					`process-data-stats_${formatDate(new Date(), "yyyyMMdd_HHmmss")}.json`,
-				);
-				await fs.writeFile(statsFile, stats.export("json"), "utf-8");
-				log("ProcessData", `Statistics exported to: ${statsFile}`, "info");
-			} catch (error: unknown) {
-				const endTime = performance.now();
-				const duration = formatDuration(endTime - startTime);
-
-				// Record error in statistics
-				stats.recordError(
-					error instanceof Error ? error : new Error(String(error)),
-				);
-
-				const errorMessage =
-					error instanceof Error ? error.message : String(error);
-				log(
-					"ProcessData",
-					`Stream data processing failed after ${duration}: ${errorMessage}`,
-					"error",
-					{ duration, error: errorMessage },
-				);
+			} catch (error) {
+				const failure =
+					error instanceof Error ? error : new Error(String(error));
+				stats.recordError(failure);
+				process.exitCode = 1;
+				log("ProcessData", `Processing failed: ${failure.message}`, "error");
 			} finally {
-				// Always end statistics collection
-				const summary = stats.endCollection();
-				log("ProcessData", "Final statistics:", "info", { summary });
-
+				log("ProcessData", "Final statistics", "info", {
+					summary: stats.endCollection(),
+				});
 				await closeFileLogging();
-				setTimeout(() => process.exit(0), 1000);
 			}
 		},
 	});
-};
 
-// Use dashed CLI options but map them to camelCase in our typed argv via yargs' .check
 type ProcessDataCli = GlobalArgs & {
 	"input-dir": string;
 	"output-file": string;

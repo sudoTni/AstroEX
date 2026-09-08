@@ -7,6 +7,7 @@
  */
 
 import { PerformanceObserver } from "node:perf_hooks";
+import { APP_VERSION } from "../constants";
 import { log } from "../utils";
 
 export interface StatisticsSummary {
@@ -370,7 +371,7 @@ export class StatisticsCollector {
 		log(
 			"Statistics",
 			`Operation ${timer.operation} completed in ${timer.duration}ms`,
-			"info",
+			"debug",
 			{
 				id,
 				duration: timer.duration,
@@ -470,7 +471,7 @@ export class StatisticsCollector {
 		this.incrementCounter("operations.total");
 		this.incrementCounter("operations.successful");
 
-		log("Statistics", `Success recorded for operation: ${operation}`, "info", {
+		log("Statistics", `Success recorded for operation: ${operation}`, "debug", {
 			operation,
 			context,
 		});
@@ -624,7 +625,7 @@ export class StatisticsCollector {
 				startTime: this.metadata.startTime,
 				endTime: this.metadata.endTime || new Date(),
 				duration: this.metadata.duration || 0,
-				version: "5.0.0",
+				version: APP_VERSION,
 				sessionId: this.metadata.sessionId,
 			},
 			performance: {

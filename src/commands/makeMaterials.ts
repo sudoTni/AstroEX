@@ -1,50 +1,62 @@
+import * as crypto from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import type { Argv } from "yargs";
+import { z } from "zod";
+import { writeArtifactManifest } from "../artifactManifest";
 import { type LLMRequest, llmService } from "../llmService";
+import type { JobInterface } from "../models";
 import {
 	loadAndReplacePromptTemplate,
 	loadPresets,
 	loadVeritasSystemPrompt,
 } from "../presets";
 import {
+	getDataDirectory,
+	getLogsDirectory,
+	getMaterialsDirectory,
+	getProfileFile,
+} from "../runtimePaths";
+import {
+	checkStageCheckpoint,
+	completeStageCheckpoint,
+	computeFileHash,
+	getSharedJobRepository,
+	initStageCheckpoint,
+} from "../stageCheckpoint";
+import {
 	type StatisticsCollector,
 	createStatisticsCollector,
 } from "../statistics";
-import type { GlobalArgs, JobInterface, Preset } from "../types";
+import type { GlobalArgs, Preset } from "../types";
 import { getPreset } from "../types";
 import {
 	closeFileLogging,
+	createLogger,
 	formatDate,
 	initializeFileLogging,
 	log,
 } from "../utils";
 import { sleepWithJitter } from "../utils/delayUtils";
+import { loadApplicationData } from "../utils/sharedCommandUtils";
 import { withSpinner } from "../utils/spinner";
 
-// Function to read external files
-async function readExternalFile(fileName: string): Promise<string> {
-	const rootDirectory = path.resolve(__dirname, "..", "..");
-	const filePath = path.join(rootDirectory, "user_data", fileName);
-	try {
-		return await fs.promises.readFile(filePath, "utf-8");
-	} catch (error) {
-		throw new Error(`Failed to read external file ${fileName}: ${error}`);
-	}
-}
+const logger = createLogger("MakeMaterials");
 
 // Function to find all JSON files in astroapply_eval_pass directory
 async function findEvaluatedJobFiles(): Promise<string[]> {
 	const evalPassDirectory = path.join(
-		process.cwd(),
-		"data",
+		getDataDirectory(),
 		"astroapply_eval_pass",
 	);
 	try {
 		const files = await fs.promises.readdir(evalPassDirectory);
 		const jsonFiles = files
-			.filter((file) => file.endsWith(".json"))
-			.map((file) => path.join(evalPassDirectory, file));
+			.filter(
+				(file: string) =>
+					file.endsWith(".json") && !file.endsWith(".manifest.json"),
+			)
+			.map((file: string) => path.join(evalPassDirectory, file));
 
 		if (jsonFiles.length === 0) {
 			log(
@@ -78,18 +90,30 @@ async function findEvaluatedJobFiles(): Promise<string[]> {
 }
 
 // Helper function to parse the raw LLM output
-function parseMaterialsResponse(responseText: string): Record<string, string> {
+const MaterialsResponseSchema = z.object({
+	"Resume Filename": z.string().min(1),
+	"Cover Letter Filename": z.string().min(1).optional(),
+	"Optimized & Tailored Professional Title": z.string().min(1),
+	"Optimized & Tailored Professional Summary": z.string().min(1),
+	"Optimized & Tailored Key Skills": z.string().min(1),
+	"Optimized & Tailored Cover Letter": z.string().min(1),
+});
+
+export function parseMaterialsResponse(
+	responseText: string,
+): z.infer<typeof MaterialsResponseSchema> {
 	const sections: Record<string, string> = {};
 	const lines = responseText.split("\n");
 	let currentHeader = "";
 	let currentContent: string[] = [];
 
 	for (const line of lines) {
-		if (line.startsWith("# ")) {
+		const headerMatch = line.match(/^#{1,3}\s+(.+)$/);
+		if (headerMatch) {
 			if (currentHeader) {
 				sections[currentHeader] = currentContent.join("\n").trim();
 			}
-			currentHeader = line.substring(2).trim(); // e.g., "Resume Filename"
+			currentHeader = headerMatch[1].trim();
 			currentContent = [];
 		} else if (currentHeader) {
 			currentContent.push(line);
@@ -100,7 +124,7 @@ function parseMaterialsResponse(responseText: string): Record<string, string> {
 		sections[currentHeader] = currentContent.join("\n").trim();
 	}
 
-	return sections;
+	return MaterialsResponseSchema.parse(sections);
 }
 
 // Singleton service for managing LLM and preset initialization
@@ -146,40 +170,10 @@ class MaterialsService {
 		);
 
 		// Load external application data once
-		this.appData = await this.loadApplicationDataInternal();
+		this.appData = await loadApplicationData();
 
 		this.isInitialized = true;
 		log("MakeMaterials", "MaterialsService initialized successfully", "info");
-	}
-
-	private async loadApplicationDataInternal(): Promise<{
-		resume: string;
-		professionalTitle: string;
-		professionalSummary: string;
-		keySkills: string;
-		testimonials: string;
-	}> {
-		const [
-			resume,
-			professionalTitle,
-			professionalSummary,
-			keySkills,
-			testimonials,
-		] = await Promise.all([
-			readExternalFile("my_resume.txt"),
-			readExternalFile("my_professional_title.txt"),
-			readExternalFile("my_professional_summary.txt"),
-			readExternalFile("my_key_skills.txt"),
-			readExternalFile("my_testimonials.txt"),
-		]);
-
-		return {
-			resume,
-			professionalTitle,
-			professionalSummary,
-			keySkills,
-			testimonials,
-		};
 	}
 
 	public getAppData() {
@@ -191,27 +185,8 @@ class MaterialsService {
 	}
 }
 
-// Function to load all external application data
-export async function loadApplicationData(): Promise<{
-	resume: string;
-	professionalTitle: string;
-	professionalSummary: string;
-	keySkills: string;
-	testimonials: string;
-}> {
-	const service = MaterialsService.getInstance();
-	if (!service.getAppData()) {
-		await service.initializeServices({} as Preset, "");
-	}
-	const appData = service.getAppData();
-	if (!appData) {
-		throw new Error("Application data failed to initialize");
-	}
-	return appData;
-}
-
 // Define a local interface for the arguments passed to runResumeOptimizationMode
-interface RunResumeOptimizationArgs {
+export interface RunResumeOptimizationArgs {
 	preset: string;
 	apiKey: string;
 	temperature?: number;
@@ -234,18 +209,39 @@ interface RunResumeOptimizationArgs {
 	logFile?: string;
 	jitter?: boolean;
 	showReasoningTokens?: boolean;
+	hideReasoningTokens?: boolean;
 	showResponseStream?: boolean;
 	stats?: StatisticsCollector;
+	reasoningEffort?: string;
+	"mm-reasoning-effort"?: string;
+	"reasoning-effort"?: string;
+	logPayload?: boolean;
+	"log-payload"?: boolean;
 }
 
 /**
  * Unified handler for resume optimization modes
  */
-async function runResumeOptimizationMode(
+export async function runResumeOptimizationMode(
 	effectivePreset: Preset,
 	args: RunResumeOptimizationArgs,
 ): Promise<{ content: unknown[]; error?: unknown }> {
-	console.log(`Running ROP - ${effectivePreset.name}`);
+	const rawReasoningEffort =
+		args.reasoningEffort ??
+		args["mm-reasoning-effort"] ??
+		args["reasoning-effort"];
+	const effectiveReasoningEffort =
+		typeof rawReasoningEffort === "string" &&
+		rawReasoningEffort.trim().length > 0
+			? rawReasoningEffort.trim()
+			: undefined;
+
+	logger.info(`Running ROP - ${effectivePreset.name}`, {
+		preset: effectivePreset.name,
+		...(effectiveReasoningEffort
+			? { reasoning_effort: effectiveReasoningEffort }
+			: {}),
+	});
 
 	try {
 		// Use singleton service for shared resources
@@ -350,11 +346,45 @@ async function runResumeOptimizationMode(
 		const maxTokens = args.maxTokens ?? effectivePreset.maxTokens;
 
 		// Create main materials directory
-		const materialsDir = path.join(process.cwd(), "materials");
+		const materialsDir = getMaterialsDirectory();
 		await fs.promises.mkdir(materialsDir, { recursive: true });
 
 		// Generate timestamp for batch
 		const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+
+		const repo = await getSharedJobRepository();
+		const batchInputSignature = crypto
+			.createHash("sha256")
+			.update(jobDescriptions.join("\n"))
+			.digest("hex");
+		const existingCheckpoint = repo.getStageCheckpoint(
+			"makeMaterials",
+			batchInputSignature,
+			effectivePreset.name,
+			effectivePreset.modelId,
+		);
+		const processedJobIds = new Set(existingCheckpoint?.processedJobIds ?? []);
+
+		if (existingCheckpoint && existingCheckpoint.status === "completed") {
+			log(
+				"MakeMaterials",
+				`Durable checkpoint match: makeMaterials already completed for current jobs with preset ${effectivePreset.name}.`,
+				"info",
+			);
+			return { content: [] };
+		}
+
+		await initStageCheckpoint(
+			"makeMaterials",
+			"eval_pass_batch",
+			batchInputSignature,
+			materialsDir,
+			effectivePreset.name,
+			effectivePreset.modelId,
+			jobDescriptions.length,
+			Array.from(processedJobIds),
+			repo,
+		);
 
 		// Process each job separately with individual output directories
 		const allResults: Record<string, unknown>[] = [];
@@ -363,12 +393,27 @@ async function runResumeOptimizationMode(
 			const jobDescription = jobDescriptions[i];
 			const jobMeta = jobMetadata[i];
 
-			if (args.verbose) {
-				console.log(
-					`\n--- Processing Job ${i + 1}/${jobDescriptions.length} ---`,
+			const jobIdentityKey = String(
+				jobMeta.jobId && jobMeta.jobId !== "N/A"
+					? jobMeta.jobId
+					: (jobMeta.jobFile ?? `${jobMeta.company}:${jobMeta.jobTitle}`),
+			);
+			if (processedJobIds.has(jobIdentityKey)) {
+				log(
+					"MakeMaterials",
+					`Skipping already generated materials for ${jobIdentityKey} from durable checkpoint.`,
+					"info",
 				);
-				console.log(`Title: ${jobMeta.jobTitle}`);
-				console.log(`Company: ${jobMeta.company}`);
+				continue;
+			}
+
+			if (args.verbose) {
+				logger.info(`Processing Job ${i + 1}/${jobDescriptions.length}`, {
+					jobIndex: i + 1,
+					totalJobs: jobDescriptions.length,
+					jobTitle: jobMeta.jobTitle,
+					company: jobMeta.company,
+				});
 			}
 
 			const placeholderData = {
@@ -390,6 +435,11 @@ async function runResumeOptimizationMode(
 			const service = MaterialsService.getInstance();
 			await service.initializeServices(effectivePreset, args.apiKey);
 
+			const hideReasoning = Boolean(
+				args.hideReasoningTokens || process.env.ASTROEX_HIDE_REASONING === "1",
+			);
+			const showReasoning = !hideReasoning && Boolean(args.showReasoningTokens);
+
 			const llmRequest: LLMRequest = {
 				provider: effectivePreset.provider as
 					| "openai"
@@ -407,9 +457,41 @@ async function runResumeOptimizationMode(
 				topP: topP,
 				maxTokens: maxTokens || 16000,
 				timeout: 30000,
-				showReasoningTokens: args.showReasoningTokens,
+				showReasoningTokens: showReasoning,
+				hideReasoningTokens: hideReasoning,
 				showResponseStream: args.showResponseStream,
+				...(effectiveReasoningEffort !== undefined
+					? { reasoning_effort: effectiveReasoningEffort }
+					: {}),
 			};
+
+			if (
+				args.logPayload ||
+				(args as unknown as Record<string, unknown>)["log-payload"]
+			) {
+				const logDir = args.logDir || getLogsDirectory();
+				await fs.promises.mkdir(logDir, { recursive: true });
+				const payloadFile = path.join(
+					logDir,
+					`makematerials_${String(jobMeta.jobTitle || `job_${i + 1}`).replace(/[^a-zA-Z0-9]/g, "_")}_payload_${timestamp}.json`,
+				);
+				await fs.promises.writeFile(
+					payloadFile,
+					JSON.stringify(llmRequest, null, 2),
+					{ encoding: "utf-8", mode: 0o600 },
+				);
+				log(
+					"MakeMaterials",
+					`Outbound LLM payload saved to: ${payloadFile}`,
+					"info",
+				);
+			}
+
+			if (args.verbose) {
+				log("MakeMaterials", "LLM Request Payload:", "debug", {
+					request: llmRequest,
+				});
+			}
 
 			// Process this job individually using the singleton service
 			const apiStartedAt = performance.now();
@@ -472,7 +554,7 @@ async function runResumeOptimizationMode(
 				jobCompany = jobData.company || String(jobMeta.company) || "N/A";
 				jobUrl = jobData.url || "N/A";
 				jobId = jobData.id || "N/A";
-				jobPostedDate = jobData.postedDate || "N/A"; // postedDate is string
+				jobPostedDate = jobData.postedDate ? String(jobData.postedDate) : "N/A";
 			} catch (_error) {
 				// If parsing fails, use the metadata from jobMeta
 				jobTitle = String(jobMeta.jobTitle) || "N/A";
@@ -520,7 +602,23 @@ ${parsedMaterials["Optimized & Tailored Cover Letter"] || "Cover letter not gene
 			// Sanitize filename to handle special characters like slashes
 			const safeFilename = resumeFilename.replace(/[^a-zA-Z0-9]/g, "_");
 			const outputFile = path.join(jobOutputDir, `${safeFilename}.txt`);
-			await fs.promises.writeFile(outputFile, outputFileContent);
+			await fs.promises.writeFile(outputFile, outputFileContent, {
+				encoding: "utf-8",
+				mode: 0o600,
+			});
+			await writeArtifactManifest(outputFile, "makeMaterials", {
+				preset: effectivePreset.name,
+				model: effectivePreset.modelId,
+				jobTitle,
+				company: jobCompany,
+			});
+			repo.recordJobInCheckpoint(
+				"makeMaterials",
+				batchInputSignature,
+				effectivePreset.name,
+				effectivePreset.modelId,
+				jobIdentityKey,
+			);
 			args.stats?.incrementCounter("files.written", 1);
 
 			const logInfo = {
@@ -538,8 +636,10 @@ ${parsedMaterials["Optimized & Tailored Cover Letter"] || "Cover letter not gene
 			allResults.push(logInfo);
 
 			if (args.verbose) {
-				console.log(`✅ Generated materials for: ${jobMeta.jobTitle}`);
-				console.log(`📁 Output file: ${outputFile}`);
+				logger.success(`Generated materials for: ${jobMeta.jobTitle}`, {
+					jobTitle: jobMeta.jobTitle,
+					outputFile,
+				});
 			}
 
 			// Sleep between processing jobs if not the last job
@@ -583,6 +683,15 @@ ${parsedMaterials["Optimized & Tailored Cover Letter"] || "Cover letter not gene
 				}
 			}
 		}
+
+		repo.completeStageCheckpoint(
+			"makeMaterials",
+			batchInputSignature,
+			effectivePreset.name,
+			effectivePreset.modelId,
+			"completed",
+			jobDescriptions.length,
+		);
 
 		args.stats?.incrementCounter("materials.generated", allResults.length);
 		args.stats?.recordSuccess("makeMaterials.complete", {
@@ -632,6 +741,20 @@ async function handleResumeOptimizationCommand(argv: unknown): Promise<void> {
 			);
 		}
 
+		const hideReasoning = Boolean(
+			typedArgv["hide-reasoning"] ||
+				typedArgv["hide-reasoning-tokens"] ||
+				typedArgv.hr ||
+				process.env.ASTROEX_HIDE_REASONING === "1",
+		);
+		const showReasoning =
+			!hideReasoning &&
+			Boolean(
+				typedArgv["show-reasoning"] ||
+					typedArgv["show-reasoning-tokens"] ||
+					typedArgv.sr,
+			);
+
 		const result = await runResumeOptimizationMode(effectivePreset, {
 			...typedArgv, // Pass all argv to runResumeOptimizationMode
 			baseUrl: effectivePreset.base_url,
@@ -641,12 +764,8 @@ async function handleResumeOptimizationCommand(argv: unknown): Promise<void> {
 			topP: (typedArgv["top-p"] as number) ?? effectivePreset.topP,
 			maxTokens:
 				(typedArgv["max-tokens"] as number) ?? effectivePreset.maxTokens,
-			apiKey: typedArgv["api-key"] as string, // Pass apiKey explicitly
-			showReasoningTokens: Boolean(
-				typedArgv["show-reasoning"] ||
-					typedArgv["show-reasoning-tokens"] ||
-					typedArgv.sr,
-			),
+			showReasoningTokens: showReasoning,
+			hideReasoningTokens: hideReasoning,
 			showResponseStream: Boolean(
 				typedArgv["show-stream"] ||
 					typedArgv["show-stream-tokens"] ||
@@ -677,29 +796,31 @@ async function handleResumeOptimizationCommand(argv: unknown): Promise<void> {
 			},
 		);
 
-		console.log(
-			`\n✅ Successfully generated materials for ${result.content.length} job(s)`,
-		);
-		console.log(
-			`📁 Main materials directory: ${path.join(process.cwd(), "materials")}`,
+		logger.success(
+			`Successfully generated materials for ${result.content.length} job(s)`,
+			{
+				jobCount: result.content.length,
+				materialsDirectory: getMaterialsDirectory(),
+			},
 		);
 
 		if ((argv as Record<string, unknown>).verbose) {
-			console.log("\nGenerated materials for each job:");
 			for (const item of result.content) {
 				if (typeof item === "object" && item !== null && "jobTitle" in item) {
-					console.log(`  • ${(item as { jobTitle: string }).jobTitle}`);
+					logger.info(`Generated: ${(item as { jobTitle: string }).jobTitle}`);
 				}
 			}
 		}
 
 		// Export statistics to file
 		const statsFile = path.join(
-			process.cwd(),
-			"materials",
+			getMaterialsDirectory(),
 			`make-materials-stats_${formatDate(new Date(), "yyyyMMdd_HHmmss")}.json`,
 		);
-		await fs.promises.writeFile(statsFile, stats.export("json"), "utf-8");
+		await fs.promises.writeFile(statsFile, stats.export("json"), {
+			encoding: "utf-8",
+			mode: 0o600,
+		});
 		log("MakeMaterials", `Statistics exported to: ${statsFile}`, "info");
 	} catch (error: unknown) {
 		const endTime = performance.now();
@@ -711,14 +832,7 @@ async function handleResumeOptimizationCommand(argv: unknown): Promise<void> {
 		);
 
 		const errorMessage = error instanceof Error ? error.message : String(error);
-		log(
-			"MakeMaterials",
-			`makeMaterials command failed: ${errorMessage}`,
-			"error",
-		);
-		console.log(
-			`\n❌ Error generating materials: ${error instanceof Error ? error.message : String(error)}\n`,
-		);
+		logger.error(`makeMaterials command failed: ${errorMessage}`, error);
 		throw error;
 	} finally {
 		// Always end statistics collection
@@ -726,7 +840,6 @@ async function handleResumeOptimizationCommand(argv: unknown): Promise<void> {
 		log("MakeMaterials", "Final statistics:", "info", { summary });
 
 		await closeFileLogging();
-		setTimeout(() => process.exit(0), 1000);
 	}
 }
 
@@ -866,7 +979,7 @@ export function addMakeMaterialsCommands(
 				.option("log-payload", {
 					type: "boolean",
 					description:
-						"Save outbound LLM payload to ./logs folder for debugging",
+						"Save sensitive outbound LLM payload to ./logs (owner-readable only).",
 					default: false,
 				})
 				.option("show-reasoning", {
@@ -881,6 +994,17 @@ export function addMakeMaterialsCommands(
 					description: "Alias for --show-reasoning",
 					default: false,
 				})
+				.option("hide-reasoning", {
+					alias: "hr",
+					type: "boolean",
+					description: "Hide reasoning/thinking tokens from the LLM.",
+					default: false,
+				})
+				.option("hide-reasoning-tokens", {
+					type: "boolean",
+					description: "Alias for --hide-reasoning",
+					default: false,
+				})
 				.option("show-stream", {
 					alias: "ss",
 					type: "boolean",
@@ -892,6 +1016,15 @@ export function addMakeMaterialsCommands(
 					type: "boolean",
 					description: "Alias for --show-stream",
 					default: false,
+				})
+				.option("mm-reasoning-effort", {
+					type: "string",
+					description:
+						"Reasoning effort for makeMaterials LLM requests (e.g. low, medium, high, max).",
+				})
+				.option("reasoning-effort", {
+					type: "string",
+					description: "Alias for --mm-reasoning-effort",
 				})
 				.check((argv: unknown) => {
 					// Basic validation - preset validation happens during execution

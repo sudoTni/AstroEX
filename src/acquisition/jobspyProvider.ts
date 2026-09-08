@@ -1,67 +1,75 @@
-/**
- * Standalone provider assembled from vendored ts-jobspy components (MIT).
- * Only explicitly supported sources are permitted; ts-jobspy's experimental
- * board adapters are deliberately not exposed through AstroEX.
- */
+import { createLogger } from "../utils";
 import { acquireIndeedJobs } from "./jobspy/indeed";
-import { acquireLinkedInJobs } from "./jobspy/linkedin";
 import type {
 	AcquisitionProvider,
 	AcquisitionQuery,
 	AcquisitionResult,
 } from "./types";
 
-export class JobSpyProvider implements AcquisitionProvider {
+const logger = createLogger("IndeedProvider");
+
+export class IndeedProvider implements AcquisitionProvider {
 	async acquire(query: AcquisitionQuery): Promise<AcquisitionResult> {
+		logger.debug("Executing Indeed acquisition query", {
+			searchTerm: query.searchTerm,
+			location: query.location,
+			isRemote: query.isRemote,
+			resultsWanted: query.resultsWanted,
+		});
 		const failures: AcquisitionResult["failures"] = [];
 		const jobs = await Promise.all(
 			query.sources.map(async (source) => {
 				try {
-					if (source === "linkedin") {
-						return await acquireLinkedInJobs({
-							searchTerm: query.searchTerm,
-							location: query.location,
-							distance: query.distance,
-							resultsWanted: query.linkedinResultsWanted ?? query.resultsWanted,
-							hoursOld: query.hoursOld,
-							isRemote: query.isRemote,
-							jobType: query.jobType,
-							easyApply: query.easyApply,
-							offset: query.offset,
-							fetchDescription: query.linkedinFetchDescription,
-							descriptionFormat: query.descriptionFormat ?? "markdown",
-							proxies: query.proxies,
-							userAgent: query.userAgent,
-						});
+					if (source !== "indeed") {
+						throw new Error(`Unsupported acquisition source: ${source}`);
 					}
-					return await acquireIndeedJobs({
+					const results = await acquireIndeedJobs({
 						searchTerm: query.searchTerm,
 						location: query.location,
 						distance: query.distance,
 						resultsWanted: query.resultsWanted,
 						hoursOld: query.hoursOld,
-						isRemote: query.isRemote,
+						isRemote: query.remoteOnly ? true : query.isRemote,
 						jobType: query.jobType,
 						easyApply: query.easyApply,
 						offset: query.offset,
 						country: query.indeedCountry,
+						apiKey: query.indeedApiKey,
 						descriptionFormat: query.descriptionFormat ?? "markdown",
 						proxies: query.proxies,
 						userAgent: query.userAgent,
 					});
+					logger.debug(`Acquired ${results.length} jobs for source ${source}`, {
+						source,
+						count: results.length,
+					});
+					return results;
 				} catch (error: unknown) {
 					const message =
 						error instanceof Error ? error.message : String(error);
+					const retryable = /429|timeout|network|5\d\d/i.test(message);
+					logger.warn(
+						`Indeed acquisition failure for source ${source}: ${message}`,
+						{
+							source,
+							error: message,
+							retryable,
+						},
+					);
 					failures.push({
 						source,
 						message,
-						retryable: /429|timeout|network|5\d\d/i.test(message),
+						retryable,
 					});
 					return [];
 				}
 			}),
 		);
 		const acquired = jobs.flat();
+		logger.debug("Acquisition query completed", {
+			totalAcquired: acquired.length,
+			failureCount: failures.length,
+		});
 		return {
 			jobs:
 				query.includeDescriptions === false

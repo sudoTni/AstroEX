@@ -23,7 +23,7 @@ test("Indeed remote predicate retains remote records and rejects on-site records
 	assert.equal(
 		isIndeedRemoteJob({
 			title: "Security Engineer",
-			location: { formatted: { long: "Example City, NY" } },
+			location: { formatted: { long: "Example City, ST" } },
 		}),
 		false,
 	);

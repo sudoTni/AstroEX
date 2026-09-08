@@ -70,7 +70,7 @@ export function isCanonicalAcquiredJob(
 	if (!value || typeof value !== "object") return false;
 	const job = value as Partial<CanonicalAcquiredJob>;
 	return (
-		(job.source === "linkedin" || job.source === "indeed") &&
+		job.source === "indeed" &&
 		typeof job.id === "string" &&
 		typeof job.canonicalUrl === "string" &&
 		typeof job.title === "string" &&

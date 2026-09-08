@@ -3,6 +3,7 @@ import * as fsPromises from "node:fs/promises";
 import * as path from "node:path";
 import type { Argv } from "yargs";
 import { z } from "zod";
+import { writeArtifactManifest } from "../artifactManifest";
 import { type LLMRequest, llmService } from "../llmService";
 import type { JobInterface } from "../models";
 import {
@@ -10,6 +11,18 @@ import {
 	loadPresets,
 	loadVeritasSystemPrompt,
 } from "../presets";
+import {
+	getDataDirectory,
+	getLogsDirectory,
+	getProfileFile,
+	getProjectDirectory,
+} from "../runtimePaths";
+import {
+	checkStageCheckpoint,
+	completeStageCheckpoint,
+	computeFileHash,
+	initStageCheckpoint,
+} from "../stageCheckpoint";
 import {
 	type StatisticsCollector,
 	createStatisticsCollector,
@@ -22,12 +35,15 @@ import {
 } from "../types";
 import {
 	closeFileLogging,
+	createLogger,
 	formatDate,
 	formatDuration,
 	initializeFileLogging,
 	log,
 } from "../utils";
 import { withSpinner } from "../utils/spinner";
+
+const logger = createLogger("JobCloth");
 
 async function callLLMWithStats(
 	request: LLMRequest,
@@ -52,96 +68,89 @@ async function callLLMWithStats(
 	}
 }
 
-/**
- * Sanitize and validate file paths to prevent directory traversal attacks
- * @param filePath File path to validate
- * @returns Sanitized and validated file path
- */
-function _sanitizeFilePath(filePath: string): string {
-	if (!filePath || typeof filePath !== "string") {
-		throw new Error("Invalid file path");
+const BooleanCoerce = z.preprocess((val) => {
+	if (typeof val === "string") {
+		const normalized = val.trim().toLowerCase();
+		if (["true", "1", "yes", "y"].includes(normalized)) return true;
+		if (["false", "0", "no", "n"].includes(normalized)) return false;
 	}
+	return val;
+}, z.boolean().optional());
 
-	// Remove any path traversal attempts
-	const sanitized = filePath
-		.replace(/../g, "") // Remove parent directory references
-		.replace(/[/]+/g, path.sep) // Normalize separators
-		.replace(/^[/]+/, "") // Remove leading separators
-		.replace(/^[/]+/, "") // Remove leading separators
-		.replace(/[/]+$/, ""); // Remove trailing separators
-
-	// Resolve to absolute path and check if it's within the project directory
-	const absolutePath = path.resolve(sanitized);
-	const rootDirectory = path.resolve(__dirname, "..", "..");
-
-	if (!absolutePath.startsWith(rootDirectory)) {
-		throw new Error("Access to file outside project directory is not allowed");
-	}
-
-	return absolutePath;
-}
-
-/**
- * Validate API key format (basic validation)
- * @param apiKey API key to validate
- * @returns True if valid format, false otherwise
- */
-function _validateApiKey(apiKey: string): boolean {
-	if (!apiKey || typeof apiKey !== "string") {
-		return false;
-	}
-
-	// Basic validation - should be reasonable length and not contain obvious patterns
-	if (apiKey.length < 10 || apiKey.length > 100) {
-		return false;
-	}
-
-	// Check for common test patterns
-	const testPatterns = [/sk-test/i, /test_/i, /demo/i, /example/i];
-
-	if (testPatterns.some((pattern) => pattern.test(apiKey))) {
-		return false;
-	}
-
-	return true;
-}
-
-/**
- * Validate URL format
- * @param url URL to validate
- * @returns True if valid URL, false otherwise
- */
-function _validateUrl(url: string): boolean {
-	if (!url || typeof url !== "string") {
-		return false;
-	}
-
-	try {
-		new URL(url);
-		return true;
-	} catch {
-		return false;
-	}
-}
+const ConfidenceCoerce = z.preprocess((val) => {
+	if (val === undefined || val === null || val === "") return 0;
+	const num = Number(val);
+	if (Number.isNaN(num)) return 0;
+	if (num > 1 && num <= 100) return num / 100;
+	if (num > 1) return 1;
+	if (num < 0) return 0;
+	return num;
+}, z.number().min(0).max(1).default(0));
 
 // Zod schemas
-const JobAnalysisResultSchema = z.object({
-	jobTitle: z.string(),
-	isVeryHighlyAligned: z.boolean().optional().default(false), // Make optional and default to false
-	rationale: z.string().optional().default(""), // Make optional and default to empty string
-	confidence: z.number().optional().default(0), // Make confidence optional and default to 0
-});
-const JobAnalysisResultsArraySchema = z.array(JobAnalysisResultSchema);
+const JobAnalysisResultSchema = z
+	.object({
+		jobTitle: z.string().optional(),
+		job_title: z.string().optional(),
+		title: z.string().optional(),
+		isWorthInvestigating: BooleanCoerce,
+		isVeryHighlyAligned: BooleanCoerce,
+		isHighlyAligned: BooleanCoerce,
+		rationale: z.string().optional().default(""),
+		confidence: ConfidenceCoerce,
+	})
+	.refine((data) => Boolean(data.jobTitle || data.job_title || data.title), {
+		message: "jobTitle, job_title, or title is required",
+	})
+	.transform((data) => {
+		const resolvedTitle = data.jobTitle ?? data.job_title ?? data.title ?? "";
+		const isAligned = Boolean(
+			data.isWorthInvestigating ??
+				data.isVeryHighlyAligned ??
+				data.isHighlyAligned ??
+				false,
+		);
+		return {
+			jobTitle: resolvedTitle,
+			isWorthInvestigating: isAligned,
+			isVeryHighlyAligned: isAligned,
+			isHighlyAligned: isAligned,
+			rationale: data.rationale,
+			confidence: data.confidence,
+		};
+	});
 
-const rootDirectory = path.resolve(__dirname, "..", "..");
+const JobAnalysisResultsArraySchema = z.union([
+	z.array(JobAnalysisResultSchema),
+	z
+		.object({
+			jobs: z.array(JobAnalysisResultSchema).optional(),
+			results: z.array(JobAnalysisResultSchema).optional(),
+			jobTitles: z.array(JobAnalysisResultSchema).optional(),
+			data: z.array(JobAnalysisResultSchema).optional(),
+		})
+		.refine(
+			(obj) => Boolean(obj.jobs || obj.results || obj.jobTitles || obj.data),
+			{
+				message: "Expected jobs, results, jobTitles, or data array",
+			},
+		)
+		.transform(
+			(obj) => obj.jobs || obj.results || obj.jobTitles || obj.data || [],
+		),
+	JobAnalysisResultSchema.transform((single) => [single]),
+]);
+
+const rootDirectory = getProjectDirectory();
 
 /**
- * Read the candidate resume from external file
+ * Read the candidate's resume from the private profile directory.
  * @returns Resume content as string
  * @throws Error if file cannot be read
  */
-async function readResumeFromFile(): Promise<string> {
-	const resumePath = path.join(rootDirectory, "user_data", "my_resume.txt");
+async function readResumeFromFile(
+	resumePath = getProfileFile("my_resume.txt"),
+): Promise<string> {
 	try {
 		const content = await fsPromises.readFile(resumePath, "utf-8");
 		if (!content || content.trim().length === 0) {
@@ -157,12 +166,41 @@ async function readResumeFromFile(): Promise<string> {
 }
 
 /**
+ * Save outbound LLM payload to logs folder when --log-payload is enabled
+ */
+async function savePayloadToJson(
+	llmRequest: LLMRequest,
+	batchIdentifier: string | number,
+	logDir: string,
+): Promise<void> {
+	try {
+		await fsPromises.mkdir(logDir, { recursive: true });
+		const timestamp = formatDate(new Date(), "yyyyMMdd_HHmmss");
+		const payloadFileName = `jobcloth_${batchIdentifier}_payload_${timestamp}.json`;
+		const payloadFilePath = path.join(logDir, payloadFileName);
+		await fsPromises.writeFile(
+			payloadFilePath,
+			JSON.stringify(llmRequest, null, 2),
+			{ encoding: "utf-8", mode: 0o600 },
+		);
+		log(
+			"JobCloth",
+			`Outbound LLM payload saved to: ${payloadFilePath}`,
+			"info",
+		);
+	} catch (err) {
+		const errorMessage = err instanceof Error ? err.message : String(err);
+		log("JobCloth", `Failed to save payload to JSON: ${errorMessage}`, "warn");
+	}
+}
+
+/**
  * Find all processed_jobs_*.json files in the data directory
  * @returns Array of file paths
  * @throws Error if data directory cannot be accessed
  */
 async function findProcessedJobFiles(): Promise<string[]> {
-	const dataDirectory = path.join(rootDirectory, "data");
+	const dataDirectory = getDataDirectory();
 	try {
 		// Verify data directory exists
 		try {
@@ -241,6 +279,7 @@ async function retryFailedJobTitles(
 	showReasoningTokens = false,
 	showResponseStream = false,
 	stats?: StatisticsCollector,
+	reasoningEffort?: string,
 ): Promise<z.infer<typeof JobAnalysisResultsArraySchema>> {
 	const successfulResults: z.infer<typeof JobAnalysisResultsArraySchema> = [];
 	const jobTitleRetryMap = new Map<string, number>();
@@ -277,8 +316,8 @@ async function retryFailedJobTitles(
 					effectivePreset.promptTemplate,
 					placeholderData,
 				);
-				userMessageContent += `\n\n--- Resume ---\n${resumeContent}`;
 				userMessageContent += `\n\n--- Job Title ---\n${jobTitle}`;
+				userMessageContent += `\n\n--- Resume ---\n${resumeContent}`;
 
 				const llmRequest: LLMRequest = {
 					provider: effectivePreset.provider as
@@ -306,7 +345,16 @@ async function retryFailedJobTitles(
 					responseSchema: JobAnalysisResultsArraySchema,
 					showReasoningTokens,
 					showResponseStream,
+					...(reasoningEffort !== undefined && reasoningEffort !== ""
+						? { reasoning_effort: reasoningEffort }
+						: {}),
 				};
+
+				if (verbose) {
+					log("JobCloth", "LLM Request Payload:", "debug", {
+						request: llmRequest,
+					});
+				}
 
 				const result = await withSpinner(
 					`Waiting for LLM response for "${jobTitle}" (attempt ${retryCount + 1}/${maxRetries})...`,
@@ -320,10 +368,10 @@ async function retryFailedJobTitles(
 				// Record success for circuit breaker
 				circuitBreaker.recordSuccess();
 
-				// The content is already parsed and validated by LLMService
-				const parsedResult = result.content as z.infer<
-					typeof JobAnalysisResultsArraySchema
-				>;
+				// Parse and validate using schema to ensure transforms and aliases are applied
+				const parsedResult = JobAnalysisResultsArraySchema.parse(
+					result.content,
+				);
 
 				if (parsedResult && parsedResult.length > 0) {
 					successfulResults.push(...parsedResult);
@@ -333,7 +381,7 @@ async function retryFailedJobTitles(
 						log(
 							"JobCloth",
 							`Successfully processed job title on retry ${retryCount + 1}: ${jobTitle}`,
-							"info",
+							"debug",
 						);
 					}
 				}
@@ -378,7 +426,7 @@ async function retryFailedJobTitles(
 		log(
 			"JobCloth",
 			`Individual retry completed. Successfully processed: ${successfulResults.length}/${batchTitles.length} job titles`,
-			"info",
+			"debug",
 			{
 				successfulCount: successfulResults.length,
 				totalCount: batchTitles.length,
@@ -406,11 +454,13 @@ export async function runJobCloth(
 		batch?: number;
 		retries?: number;
 		maxTokens?: number;
+		resumeFile?: string;
 		pingInterval?: number;
 		openaiTimeout?: number;
 		verbose?: boolean;
 		logPayload?: boolean;
 		preset?: string;
+		logDir?: string;
 		sleep?: number;
 		batchRetryAttempts?: number;
 		batchRetryDelay?: number;
@@ -418,22 +468,28 @@ export async function runJobCloth(
 		circuitThreshold?: number;
 		circuitTimeout?: number;
 		showReasoningTokens?: boolean;
+		hideReasoningTokens?: boolean;
 		showResponseStream?: boolean;
 		stats?: StatisticsCollector;
+		reasoningEffort?: string;
+		"jc-reasoning-effort"?: string;
+		"reasoning-effort"?: string;
 	},
 ): Promise<JobInterface[]> {
 	const {
 		apiKey,
 		baseUrl: baseUrl_unused,
 		modelId: modelId_unused,
-		temperature = 0.7,
-		topP = 0.95,
+		temperature,
+		topP,
 		batch = 100,
 		retries: retries_unused = 3,
-		maxTokens = 16000,
+		maxTokens,
 		pingInterval: pingInterval_unused = 15,
 		openaiTimeout = 60,
 		verbose = false,
+		logPayload = false,
+		logDir = getLogsDirectory(),
 		sleep = 2,
 		batchRetryAttempts = 3,
 		batchRetryDelay = 5000,
@@ -441,14 +497,30 @@ export async function runJobCloth(
 		circuitThreshold = 0.5,
 		circuitTimeout = 60,
 		showReasoningTokens = false,
+		hideReasoningTokens = false,
 		showResponseStream = false,
 		stats,
+		reasoningEffort: rawReasoningEffort,
+		"jc-reasoning-effort": jcReasoningEffort,
+		"reasoning-effort": reasoningEffortAlias,
 	} = options;
 	// Reference intentionally-unused values to satisfy linters without changing behavior
 	void baseUrl_unused;
 	void modelId_unused;
 	void retries_unused;
 	void pingInterval_unused;
+
+	const rawReasoning =
+		rawReasoningEffort ?? jcReasoningEffort ?? reasoningEffortAlias;
+	const effectiveReasoningEffort =
+		typeof rawReasoning === "string" && rawReasoning.trim().length > 0
+			? rawReasoning.trim()
+			: undefined;
+
+	const effectiveHideReasoning =
+		Boolean(hideReasoningTokens) || process.env.ASTROEX_HIDE_REASONING === "1";
+	const effectiveShowReasoningTokens =
+		!effectiveHideReasoning && Boolean(showReasoningTokens);
 
 	const resolvedOutputFile = path.resolve(rootDirectory, outputFile);
 
@@ -577,7 +649,7 @@ export async function runJobCloth(
 		const failedFilesList =
 			failedFiles.length > 0 ? `nFailed files: ${failedFiles.join(", ")}` : "";
 		throw new Error(
-			`No valid jobs found in any input files. Please ensure you have scraped search data first.${failedFilesList}`,
+			`No valid jobs found in any input files. Please run processData first or provide an Indeed job artifact.${failedFilesList}`,
 		);
 	}
 
@@ -603,10 +675,13 @@ export async function runJobCloth(
 		"JobCloth",
 		`Processing ${jobTitles.length} unique job titles (filtered from ${allJobs.length} total jobs)`,
 		"info",
+		effectiveReasoningEffort
+			? { reasoning_effort: effectiveReasoningEffort }
+			: undefined,
 	);
 
 	// Read resume once and cache it
-	const resumeContent = await readResumeFromFile();
+	const resumeContent = await readResumeFromFile(options.resumeFile);
 
 	// Load all presets and the Veritas system prompt
 	const allPresets = await loadPresets();
@@ -630,14 +705,37 @@ export async function runJobCloth(
 	const effectiveApiKey = apiKey; // API key always comes from CLI/env
 	const effectiveBaseUrl = effectivePreset.base_url;
 	const effectiveModelId = effectivePreset.modelId;
+
+	const hasCliTemperature =
+		process.argv.includes("--temperature") ||
+		process.argv.some((arg) => arg.startsWith("--temperature="));
 	const effectiveTemperature =
-		temperature !== undefined ? temperature : effectivePreset.temperature;
-	const effectiveTopP = topP !== undefined ? topP : effectivePreset.topP;
-	const hasCliMaxTokens = process.argv.includes("--max-tokens");
+		hasCliTemperature && temperature !== undefined
+			? temperature
+			: (effectivePreset.temperature ?? temperature ?? 0.7);
+
+	const hasCliTopP =
+		process.argv.includes("--top-p") ||
+		process.argv.includes("--topP") ||
+		process.argv.some(
+			(arg) => arg.startsWith("--top-p=") || arg.startsWith("--topP="),
+		);
+	const effectiveTopP =
+		hasCliTopP && topP !== undefined
+			? topP
+			: (effectivePreset.topP ?? topP ?? 0.95);
+
+	const hasCliMaxTokens =
+		process.argv.includes("--max-tokens") ||
+		process.argv.includes("--maxTokens") ||
+		process.argv.some(
+			(arg) =>
+				arg.startsWith("--max-tokens=") || arg.startsWith("--maxTokens="),
+		);
 	const effectiveMaxTokens =
-		hasCliMaxTokens && options.maxTokens !== undefined
-			? options.maxTokens
-			: (effectivePreset.maxTokens ?? 16000);
+		hasCliMaxTokens && maxTokens !== undefined
+			? maxTokens
+			: (effectivePreset.maxTokens ?? maxTokens ?? 16000);
 
 	// Initialize LLM service with provider configuration
 	llmService.initialize(
@@ -652,24 +750,67 @@ export async function runJobCloth(
 		effectivePreset.provider,
 	);
 
+	let stageInputHash = "";
+	if (inputFiles.length > 0) {
+		try {
+			stageInputHash = await computeFileHash(inputFiles[0]);
+			const checkpoint = await checkStageCheckpoint(
+				"jobCloth",
+				inputFiles[0],
+				resolvedOutputFile,
+				effectivePreset.name,
+				effectivePreset.modelId,
+			);
+			if (checkpoint.isCompleted) {
+				log(
+					"JobCloth",
+					`Durable checkpoint match: jobCloth already completed for input ${inputFiles[0]} with preset ${effectivePreset.name}. Reusing ${resolvedOutputFile}.`,
+					"info",
+					{ outputHash: checkpoint.outputHash },
+				);
+				const existingContent = await fsPromises.readFile(
+					resolvedOutputFile,
+					"utf8",
+				);
+				return JSON.parse(existingContent) as JobInterface[];
+			}
+			await initStageCheckpoint(
+				"jobCloth",
+				inputFiles[0],
+				stageInputHash,
+				resolvedOutputFile,
+				effectivePreset.name,
+				effectivePreset.modelId,
+				jobTitles.length,
+				Array.from(checkpoint.processedJobIds),
+			);
+		} catch (err) {
+			log("JobCloth", `Checkpoint initialization notice: ${err}`, "debug");
+		}
+	}
+
 	// Verbose logging for prompts and system information
 	if (verbose) {
-		log("JobCloth", "=== VERBOSE MODE ENABLED ===", "info");
-		log("JobCloth", "System Instructions:", "info");
-		log("JobCloth", veritasSystemPrompt, "info");
-		log("JobCloth", "Resume Content (first 500 chars):", "info");
-		log("JobCloth", `${resumeContent.substring(0, 500)}...`, "info");
-		log("JobCloth", "Model Configuration:", "info");
-		log("JobCloth", `  - Preset: ${effectivePreset.name}`, "info");
-		log("JobCloth", `  - Provider: ${effectivePreset.provider}`, "info");
-		log("JobCloth", `  - Base URL: ${effectiveBaseUrl}`, "info");
-		log("JobCloth", `  - Model: ${effectiveModelId}`, "info");
-		log("JobCloth", `  - Temperature: ${effectiveTemperature}`, "info");
-		log("JobCloth", `  - Top P: ${effectiveTopP}`, "info");
-		log("JobCloth", `  - Max Tokens: ${effectiveMaxTokens}`, "info");
-		log("JobCloth", `  - Batch Size: ${batch}`, "info");
-		log("JobCloth", `  - Unique Job Titles: ${jobTitles.length}`, "info");
-		log("JobCloth", "===================================", "info");
+		log("JobCloth", "=== VERBOSE MODE ENABLED ===", "debug");
+		log("JobCloth", "System Instructions:", "debug");
+		log("JobCloth", veritasSystemPrompt, "debug");
+		log("JobCloth", "Resume Content (first 500 chars):", "debug");
+		log("JobCloth", `${resumeContent.substring(0, 500)}...`, "debug");
+		log("JobCloth", "Model Configuration:", "debug", {
+			preset: effectivePreset.name,
+			provider: effectivePreset.provider,
+			baseUrl: effectiveBaseUrl,
+			model: effectiveModelId,
+			temperature: effectiveTemperature,
+			topP: effectiveTopP,
+			maxTokens: effectiveMaxTokens,
+			batchSize: batch,
+			uniqueJobTitles: jobTitles.length,
+			...(effectiveReasoningEffort
+				? { reasoning_effort: effectiveReasoningEffort }
+				: {}),
+		});
+		log("JobCloth", "===================================", "debug");
 	}
 
 	// Initialize circuit breaker for API failures
@@ -754,12 +895,10 @@ export async function runJobCloth(
 				if (verbose) {
 					log(
 						"JobCloth",
-						`Processing ${remainingTitles.length} job titles:`,
-						"info",
+						`Processing ${remainingTitles.length} job titles (attempt ${attemptCount})`,
+						"debug",
+						{ count: remainingTitles.length, titles: remainingTitles },
 					);
-					remainingTitles.forEach((title, index) => {
-						log("JobCloth", `  ${index + 1}. ${title}`, "info");
-					});
 				}
 
 				const placeholderData = {
@@ -775,8 +914,8 @@ export async function runJobCloth(
 					effectivePreset.promptTemplate,
 					placeholderData,
 				);
-				userMessageContent += `\n\n--- Resume ---\n${resumeContent}`;
 				userMessageContent += `\n\n--- Job Titles ---\n${remainingTitles.join("\n")}`;
+				userMessageContent += `\n\n--- Resume ---\n${resumeContent}`;
 
 				const llmRequest: LLMRequest = {
 					provider: effectivePreset.provider as
@@ -802,8 +941,12 @@ export async function runJobCloth(
 					maxTokens: effectiveMaxTokens,
 					timeout: openaiTimeout * 1000,
 					responseSchema: JobAnalysisResultsArraySchema, // Pass the Zod schema for validation
-					showReasoningTokens,
+					showReasoningTokens: effectiveShowReasoningTokens,
+					hideReasoningTokens: effectiveHideReasoning,
 					showResponseStream,
+					...(effectiveReasoningEffort !== undefined
+						? { reasoning_effort: effectiveReasoningEffort }
+						: {}),
 				};
 
 				// Add JSON Mode for OpenAI provider
@@ -813,22 +956,12 @@ export async function runJobCloth(
 					).response_format = { type: "json_object" };
 				}
 
-				// Add JSON Mode for OpenAI provider
-				if (effectivePreset.provider === "openai") {
-					(
-						llmRequest as LLMRequest & { response_format?: { type: string } }
-					).response_format = { type: "json_object" };
-				}
-
-				// Add JSON Mode for OpenAI provider
-				if (effectivePreset.provider === "openai") {
-					(
-						llmRequest as LLMRequest & { response_format?: { type: string } }
-					).response_format = { type: "json_object" };
+				if (logPayload) {
+					await savePayloadToJson(llmRequest, "single", logDir);
 				}
 
 				if (verbose) {
-					log("JobCloth", "LLM Request Payload:", "info", {
+					log("JobCloth", "LLM Request Payload:", "debug", {
 						request: llmRequest,
 					});
 				}
@@ -855,24 +988,15 @@ export async function runJobCloth(
 					circuitBreaker.recordSuccess();
 
 					if (verbose) {
-						log("JobCloth", "API Response:", "info");
-						log("JobCloth", `  - Success: true`, "info");
-						log(
-							"JobCloth",
-							`  - Content Type: ${typeof result.content}`,
-							"info",
-						);
-						log(
-							"JobCloth",
-							`  - Full Content: ${JSON.stringify(result.content).substring(0, 2000)}...`,
-							"info",
-						); // Log stringified content
+						log("JobCloth", "API Response received successfully", "debug", {
+							contentType: typeof result.content,
+						});
 					}
 
-					// The content is already parsed and validated by LLMService
-					const parsedResult = result.content as z.infer<
-						typeof JobAnalysisResultsArraySchema
-					>;
+					// Parse and validate using schema to ensure transforms and aliases are applied
+					const parsedResult = JobAnalysisResultsArraySchema.parse(
+						result.content,
+					);
 
 					lastError = null;
 					allAnalysisResults.push(...parsedResult);
@@ -883,7 +1007,7 @@ export async function runJobCloth(
 							log(
 								"JobCloth",
 								`Successfully processed all ${newlyProcessedCount} job titles`,
-								"info",
+								"debug",
 							);
 						}
 					}
@@ -956,16 +1080,14 @@ export async function runJobCloth(
 					log(
 						"JobCloth",
 						`=== BATCH ${Math.floor(i / batch) + 1}/${totalBatches} (Attempt ${batchAttempt}/${batchRetryAttempts}) ===`,
-						"info",
+						"debug",
+						{
+							batchNumber: Math.floor(i / batch) + 1,
+							totalBatches,
+							attempt: batchAttempt,
+							jobCount: batchTitles.length,
+						},
 					);
-					log(
-						"JobCloth",
-						`Processing batch of ${batchTitles.length} job titles:`,
-						"info",
-					);
-					batchTitles.forEach((title, index) => {
-						log("JobCloth", `  ${index + 1}. ${title}`, "info");
-					});
 				}
 
 				try {
@@ -989,8 +1111,8 @@ export async function runJobCloth(
 						effectivePreset.promptTemplate,
 						placeholderData,
 					);
-					userMessageContent += `\n\n--- Resume ---\n${resumeContent}`;
 					userMessageContent += `\n\n--- Job Titles ---\n${batchTitles.join("\n")}`;
+					userMessageContent += `\n\n--- Resume ---\n${resumeContent}`;
 
 					const llmRequest: LLMRequest = {
 						provider: effectivePreset.provider as
@@ -1016,12 +1138,21 @@ export async function runJobCloth(
 						maxTokens: effectiveMaxTokens,
 						timeout: openaiTimeout * 1000,
 						responseSchema: JobAnalysisResultsArraySchema, // Pass the Zod schema for validation
-						showReasoningTokens,
+						showReasoningTokens: effectiveShowReasoningTokens,
+						hideReasoningTokens: effectiveHideReasoning,
 						showResponseStream,
+						...(effectiveReasoningEffort !== undefined
+							? { reasoning_effort: effectiveReasoningEffort }
+							: {}),
 					};
 
+					const batchNum = Math.floor(i / batch) + 1;
+					if (logPayload) {
+						await savePayloadToJson(llmRequest, `batch_${batchNum}`, logDir);
+					}
+
 					if (verbose) {
-						log("JobCloth", "LLM Request Payload:", "info", {
+						log("JobCloth", "LLM Request Payload:", "debug", {
 							request: llmRequest,
 						});
 					}
@@ -1040,24 +1171,18 @@ export async function runJobCloth(
 					circuitBreaker.recordSuccess();
 
 					if (verbose) {
-						log("JobCloth", "Batch API Response:", "info");
-						log("JobCloth", `  - Success: true`, "info");
 						log(
 							"JobCloth",
-							`  - Content Type: ${typeof result.content}`,
-							"info",
+							"Batch API Response received successfully",
+							"debug",
+							{
+								contentType: typeof result.content,
+							},
 						);
-						log(
-							"JobCloth",
-							`  - Full Content: ${JSON.stringify(result.content).substring(0, 2000)}...`,
-							"info",
-						); // Log stringified content
 					}
 
-					// The content is already parsed and validated by LLMService
-					batchResults = result.content as z.infer<
-						typeof JobAnalysisResultsArraySchema
-					>;
+					// Parse and validate using schema to ensure transforms and aliases are applied
+					batchResults = JobAnalysisResultsArraySchema.parse(result.content);
 					allAnalysisResults.push(...batchResults);
 					batchSuccess = true;
 					batchLastError = null;
@@ -1066,7 +1191,7 @@ export async function runJobCloth(
 						log(
 							"JobCloth",
 							`Batch ${Math.floor(i / batch) + 1} processed successfully`,
-							"info",
+							"debug",
 						);
 					}
 					break; // Exit retry loop on success
@@ -1116,9 +1241,10 @@ export async function runJobCloth(
 					verbose,
 					circuitBreaker,
 					jobTitleRetryAttempts,
-					showReasoningTokens,
+					effectiveShowReasoningTokens,
 					showResponseStream,
 					stats,
+					effectiveReasoningEffort,
 				);
 
 				allAnalysisResults.push(...individualResults);
@@ -1155,25 +1281,44 @@ export async function runJobCloth(
 		string,
 		z.infer<typeof JobAnalysisResultSchema>
 	>();
-	allAnalysisResults.forEach((result) => {
+	const normalizedAnalysisMap = new Map<
+		string,
+		z.infer<typeof JobAnalysisResultSchema>
+	>();
+	for (const result of allAnalysisResults) {
 		if (result?.jobTitle) {
 			analysisMap.set(result.jobTitle, result);
+			normalizedAnalysisMap.set(result.jobTitle.trim().toLowerCase(), result);
 		}
-	});
+	}
+
+	const getAnalysisForJob = (title: string) => {
+		return (
+			analysisMap.get(title) ??
+			normalizedAnalysisMap.get(title.trim().toLowerCase())
+		);
+	};
 
 	// Filter jobs
 	const highlyAlignedJobs = allJobs.filter((job) => {
-		const analysis = analysisMap.get(job.title);
-		return analysis?.isVeryHighlyAligned;
+		const analysis = getAnalysisForJob(job.title);
+		return Boolean(
+			analysis?.isWorthInvestigating ||
+				analysis?.isVeryHighlyAligned ||
+				analysis?.isHighlyAligned,
+		);
 	});
 
-	// Add confidence score
+	// Add confidence score and analysis metadata
 	const highlyAlignedJobsWithConfidence = highlyAlignedJobs.map((job) => {
-		const analysis = analysisMap.get(job.title);
+		const analysis = getAnalysisForJob(job.title);
 		if (analysis) {
 			return {
 				...job,
 				confidence: analysis.confidence,
+				rationale: analysis.rationale,
+				isWorthInvestigating: analysis.isWorthInvestigating,
+				isVeryHighlyAligned: analysis.isVeryHighlyAligned,
 			};
 		}
 		return job;
@@ -1182,8 +1327,24 @@ export async function runJobCloth(
 	await fsPromises.writeFile(
 		resolvedOutputFile,
 		JSON.stringify(highlyAlignedJobsWithConfidence, null, 2),
-		"utf-8",
+		{ encoding: "utf-8", mode: 0o600 },
 	);
+	await writeArtifactManifest(resolvedOutputFile, "jobCloth", {
+		inputJobs: allJobs.length,
+		outputJobs: highlyAlignedJobsWithConfidence.length,
+		preset: effectivePreset.name,
+		model: effectivePreset.modelId,
+	});
+	if (stageInputHash) {
+		await completeStageCheckpoint(
+			"jobCloth",
+			stageInputHash,
+			resolvedOutputFile,
+			effectivePreset.name,
+			effectivePreset.modelId,
+			highlyAlignedJobsWithConfidence.length,
+		);
+	}
 	stats?.incrementCounter("files.written", 1);
 	stats?.incrementCounter(
 		"jobCloth.jobsRejected",
@@ -1208,8 +1369,9 @@ export const addJobClothCommand = (
 		command: "jobCloth",
 		describe:
 			"Production-ready job role identification using AI providers with enhanced security, centralized LLM service, and comprehensive error handling. Auto-detects processed_jobs_*.json files in ./data/ if no input file is specified.",
-		builder: (yy: any) => {
-			return (yy as Argv<GlobalArgs & JobClothArgs>)
+		builder: (yy: Argv<GlobalArgs>) => {
+			let builder: Argv = yy;
+			builder = builder
 				.option("base-url", {
 					type: "string",
 					description:
@@ -1268,11 +1430,13 @@ export const addJobClothCommand = (
 				.option("max-tokens", {
 					type: "number",
 					description:
-						"Maximum tokens for AI response (overridden by preset if available).",
+						"Maximum number of tokens to generate in the response. Defaults to 16000 or preset value.",
+					demandOption: false,
 				})
 				.option("ping-interval", {
 					type: "number",
-					description: "Interval (in seconds) between ping logs.",
+					description:
+						"Interval in seconds to print a keepalive dot while waiting for the LLM response.",
 					default: 15,
 				})
 				.option("openai-timeout", {
@@ -1288,9 +1452,12 @@ export const addJobClothCommand = (
 				})
 				.option("log-payload", {
 					type: "boolean",
-					description: "Save outbound LLM payload to ./logs folder",
+					description:
+						"Save sensitive outbound LLM payload to ./logs (owner-readable only).",
 					default: false,
-				})
+				});
+
+			return builder
 				.option("show-reasoning", {
 					alias: "sr",
 					type: "boolean",
@@ -1301,6 +1468,17 @@ export const addJobClothCommand = (
 				.option("show-reasoning-tokens", {
 					type: "boolean",
 					description: "Alias for --show-reasoning",
+					default: false,
+				})
+				.option("hide-reasoning", {
+					alias: "hr",
+					type: "boolean",
+					description: "Hide reasoning/thinking tokens from the LLM.",
+					default: false,
+				})
+				.option("hide-reasoning-tokens", {
+					type: "boolean",
+					description: "Alias for --hide-reasoning",
 					default: false,
 				})
 				.option("show-stream", {
@@ -1355,9 +1533,21 @@ export const addJobClothCommand = (
 					description: "Circuit breaker timeout in seconds (default: 60).",
 					default: 60,
 				})
-				.check(async (argv) => {
+				.option("jc-reasoning-effort", {
+					type: "string",
+					description:
+						"Reasoning effort for jobCloth LLM requests (e.g. low, medium, high, max).",
+				})
+				.option("reasoning-effort", {
+					type: "string",
+					description: "Alias for --jc-reasoning-effort",
+				})
+				.check(async (argv: Record<string, unknown>) => {
 					const allPresets = await loadPresets();
-					if (!argv.preset || !getPreset("jobCloth", argv.preset, allPresets)) {
+					if (
+						!argv.preset ||
+						!getPreset("jobCloth", argv.preset as string, allPresets)
+					) {
 						throw new Error(
 							`Invalid or missing preset. Available presets for jobCloth: ${Object.keys(allPresets.jobCloth).join(", ")}`,
 						);
@@ -1398,7 +1588,7 @@ export const addJobClothCommand = (
 				const logDir =
 					typeof typedArgv.logDir === "string"
 						? typedArgv.logDir
-						: path.join(rootDirectory, "logs");
+						: getLogsDirectory();
 				const logFile =
 					typeof typedArgv.logFile === "string"
 						? typedArgv.logFile
@@ -1460,12 +1650,59 @@ export const addJobClothCommand = (
 
 				// API key always comes from CLI args or env
 				const apiKey = typedArgv["api-key"] as string;
-				// Use preset maxTokens unless explicitly overridden by CLI argument
-				const hasCliMaxTokens = process.argv.includes("--max-tokens");
+				// Sampling parameters: respect preset definitions unless explicitly overridden by CLI arguments
+				const hasCliTemperature =
+					process.argv.includes("--temperature") ||
+					process.argv.some((arg) => arg.startsWith("--temperature="));
+				const effectiveTemperature =
+					hasCliTemperature && typedArgv.temperature !== undefined
+						? (typedArgv.temperature as number)
+						: effectivePreset.temperature;
+
+				const hasCliTopP =
+					process.argv.includes("--top-p") ||
+					process.argv.includes("--topP") ||
+					process.argv.some(
+						(arg) => arg.startsWith("--top-p=") || arg.startsWith("--topP="),
+					);
+				const effectiveTopP =
+					hasCliTopP && typedArgv["top-p"] !== undefined
+						? (typedArgv["top-p"] as number)
+						: effectivePreset.topP;
+
+				const hasCliMaxTokens =
+					process.argv.includes("--max-tokens") ||
+					process.argv.includes("--maxTokens") ||
+					process.argv.some(
+						(arg) =>
+							arg.startsWith("--max-tokens=") || arg.startsWith("--maxTokens="),
+					);
 				const effectiveMaxTokens =
 					hasCliMaxTokens && typedArgv["max-tokens"] !== undefined
 						? (typedArgv["max-tokens"] as number)
 						: (effectivePreset.maxTokens ?? 16000);
+
+				const hideReasoning = Boolean(
+					typedArgv["hide-reasoning"] ||
+						typedArgv["hide-reasoning-tokens"] ||
+						typedArgv.hr ||
+						process.env.ASTROEX_HIDE_REASONING === "1",
+				);
+				const showReasoning =
+					!hideReasoning &&
+					Boolean(
+						typedArgv["show-reasoning"] ||
+							typedArgv["show-reasoning-tokens"] ||
+							typedArgv.sr,
+					);
+
+				const rawReasoningEffort = (typedArgv["jc-reasoning-effort"] ??
+					typedArgv["reasoning-effort"]) as string | undefined;
+				const reasoningEffort =
+					typeof rawReasoningEffort === "string" &&
+					rawReasoningEffort.trim().length > 0
+						? rawReasoningEffort.trim()
+						: undefined;
 
 				const result = await runJobCloth(
 					Array.isArray(inputFiles)
@@ -1476,8 +1713,8 @@ export const addJobClothCommand = (
 						apiKey,
 						baseUrl: effectivePreset.base_url,
 						modelId: effectivePreset.modelId,
-						temperature: effectivePreset.temperature,
-						topP: effectivePreset.topP,
+						temperature: effectiveTemperature,
+						topP: effectiveTopP,
 						batch: typedArgv.batch as number,
 						retries: typedArgv.retries as number,
 						maxTokens: effectiveMaxTokens,
@@ -1485,6 +1722,7 @@ export const addJobClothCommand = (
 						openaiTimeout: typedArgv["openai-timeout"] as number,
 						verbose: typedArgv.verbose as boolean,
 						logPayload: typedArgv["log-payload"] as boolean,
+						logDir: (typedArgv["log-dir"] as string) || getLogsDirectory(),
 						preset: typedArgv.preset as string,
 						sleep: typedArgv.sleep as number,
 						batchRetryAttempts: typedArgv["batch-retry-attempts"] as number,
@@ -1494,17 +1732,15 @@ export const addJobClothCommand = (
 						] as number,
 						circuitThreshold: typedArgv["circuit-threshold"] as number,
 						circuitTimeout: typedArgv["circuit-timeout"] as number,
-						showReasoningTokens: Boolean(
-							typedArgv["show-reasoning"] ||
-								typedArgv["show-reasoning-tokens"] ||
-								typedArgv.sr,
-						),
+						showReasoningTokens: showReasoning,
+						hideReasoningTokens: hideReasoning,
 						showResponseStream: Boolean(
 							typedArgv["show-stream"] ||
 								typedArgv["show-stream-tokens"] ||
 								typedArgv["stream-response"] ||
 								typedArgv.ss,
 						),
+						...(reasoningEffort !== undefined ? { reasoningEffort } : {}),
 						stats,
 					},
 				);
@@ -1524,8 +1760,7 @@ export const addJobClothCommand = (
 
 				// Export statistics to file
 				const statsFile = path.join(
-					rootDirectory,
-					"data",
+					getDataDirectory(),
 					`job-cloth-stats_${formatDate(new Date(), "yyyyMMdd_HHmmss")}.json`,
 				);
 				await fsPromises.writeFile(statsFile, stats.export("json"), "utf-8");
@@ -1545,13 +1780,13 @@ export const addJobClothCommand = (
 					duration,
 					error: errorMessage,
 				});
+				process.exitCode = 1;
 			} finally {
 				// Always end statistics collection
 				const summary = stats.endCollection();
 				log("JobCloth", "Final statistics:", "info", { summary });
 
 				await closeFileLogging();
-				setTimeout(() => process.exit(0), 1000);
 			}
 		},
 	}) as unknown as Argv<GlobalArgs>;

@@ -1,6 +1,6 @@
 /**
  * AstroEX Centralized LLM Service
- * Version 5.0.0
+ * Version 0.13.0
  *
  * This module provides a unified interface for all LLM API calls across the application.
  * It supports multiple providers (OpenAI, Gemini, Mistral, OpenRouter, POE) with consistent
@@ -14,9 +14,8 @@
  * - Batch processing with concurrency control
  * - Comprehensive error handling and retry logic
  *
- * @author tjenkel
+ * @author AstroEX Contributors
  * @license MIT
-import { createLogger } from "./utils";
  * @since 2.0.0
  */
 
@@ -26,7 +25,21 @@ import { OpenAI } from "openai";
 import { z } from "zod";
 import { type CircuitBreaker, CircuitBreakerFactory } from "./circuitBreaker";
 import type { AIProviderConfig, PerformanceMetrics } from "./types";
-import { AppError, formatDuration, log, logError } from "./utils";
+import {
+	AppError,
+	type LegacyLogLevel,
+	applyHsvFade,
+	createLogger,
+	createStreamFader,
+	formatDuration,
+	formatLLMRequest,
+	formatLLMResponse,
+	formatReasoningBlock,
+	log,
+	logError,
+} from "./utils";
+
+const logger = createLogger("LLMService");
 
 // Pre-compiled regex patterns for better performance
 const _COMPILED_REGEX_PATTERNS = {
@@ -37,7 +50,26 @@ const _COMPILED_REGEX_PATTERNS = {
 	UNESCAPED_QUOTES: /([^\\])""/g,
 	MISSING_COMMA_BETWEEN_STRUCTURES: /(\}|\])\s*(\{|\[)/g,
 	NESTED_OBJECT_ISSUES: /}\s*}/g,
-	NESTED_ARRAY_ISSUES: /\]\s*\]/g,
+	CONSECUTIVE_COMMAS: /,\s*,/g,
+	LEADING_COMMA: /{\s*,/g,
+	COLON_INSTEAD_OF_COMMA: /:\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*:/g,
+	MULTIPLE_COLONS: /:\s*:/g,
+	ESCAPE_SEQUENCES: /\\([nrtbfv0\\])/g,
+	INVALID_ESCAPE_SEQUENCES: /\\([^nrtbfv0\\"])/g,
+	NUMERIC_STRINGS: /"(\d+)"/g,
+	BOOLEAN_STRINGS: /"(true|false)"/g,
+	NULL_STRINGS: /"null"/g,
+	ARRAY_BRACKETS: /\[\s*\]/g,
+	OBJECT_BRACES: /\{\s*\}/g,
+	HTML_TAGS: /<[^>]*>/g,
+	EXTRA_WHITESPACE: /\s+/g,
+	LINE_BREAKS: /\r?\n|\r/g,
+	// biome-ignore lint/suspicious/noControlCharactersInRegex: intentional pattern matching control characters for sanitization
+	CONTROL_CHARACTERS: /[\x00-\x1F\x7F-\x9F]/g,
+	MARKDOWN_CODE_BLOCKS: /```(?:json)?\s*([\s\S]*?)\s*```/g,
+	SYSTEM_PROMPT_PREFIX: /^system:\s*/i,
+	ASSISTANT_PROMPT_PREFIX: /^assistant:\s*/i,
+	USER_PROMPT_PREFIX: /^user:\s*/i,
 } as const;
 
 // Type definitions for JSON parsing operations
@@ -69,9 +101,9 @@ type JsonParsingMetrics = {
 // Circular buffer implementation for error history
 class CircularBuffer<T> {
 	private buffer: T[];
-	private head: number = 0;
-	private tail: number = 0;
-	private size: number = 0;
+	private head = 0;
+	private tail = 0;
+	private size = 0;
 	private capacity: number;
 
 	constructor(capacity: number) {
@@ -128,7 +160,9 @@ const LLMRequestSchema = z.object({
 	timeout: z.number().min(1000).max(60000).default(30000),
 	responseSchema: z.any().optional(), // Optional Zod schema for response validation
 	showReasoningTokens: z.boolean().optional(),
+	hideReasoningTokens: z.boolean().optional(),
 	showResponseStream: z.boolean().optional(),
+	reasoning_effort: z.string().optional(),
 });
 
 export type LLMRequest = z.infer<typeof LLMRequestSchema>;
@@ -142,12 +176,23 @@ const LLMResponseSchema = z.object({
 		promptTokens: z.number(),
 		completionTokens: z.number(),
 		totalTokens: z.number(),
+		cachedTokens: z.number().optional(),
+		reasoningTokens: z.number().optional(),
 	}),
 	duration: z.number(),
 	timestamp: z.string(),
+	finishReason: z.string().optional(),
+	reasoningContent: z.string().optional(),
 });
 
 export type LLMResponse = z.infer<typeof LLMResponseSchema>;
+
+type ReasoningFields = {
+	content?: string | null;
+	reasoning_content?: string | null;
+	reasoning?: string | null;
+	thinking?: string | null;
+};
 
 // Schema for batch processing
 const BatchRequestSchema = z.object({
@@ -163,13 +208,60 @@ export type BatchRequest = z.infer<typeof BatchRequestSchema>;
  * Centralized LLM Service class
  */
 export class LLMService {
+	private static readonly DEFAULT_MAX_OUTPUT_TOKENS = 64_000;
 	private providers: Map<string, AIProviderConfig> = new Map();
-	private defaultProvider: string = "openrouter";
+	private defaultProvider = "openrouter";
 	private performanceMetrics: PerformanceMetrics[] = [];
-	private requestCount: number = 0;
-	private successCount: number = 0;
-	private failureCount: number = 0;
+	private requestCount = 0;
+	private reservedOutputTokens = 0;
+	private runStartedAt = Date.now();
+	private successCount = 0;
+	private failureCount = 0;
 	private circuitBreakers: Map<string, CircuitBreaker> = new Map();
+
+	private getRequestBudget(): number | undefined {
+		const value = process.env.ASTROEX_MAX_LLM_REQUESTS;
+		if (!value) return undefined;
+		const budget = Number(value);
+		if (!Number.isSafeInteger(budget) || budget < 1) {
+			throw new Error("ASTROEX_MAX_LLM_REQUESTS must be a positive integer");
+		}
+		return budget;
+	}
+
+	private getOutputTokenBudget(): number | undefined {
+		const value = process.env.ASTROEX_MAX_LLM_OUTPUT_TOKENS;
+		if (!value) return LLMService.DEFAULT_MAX_OUTPUT_TOKENS;
+		const budget = Number(value);
+		if (!Number.isSafeInteger(budget) || budget < 1) {
+			throw new Error(
+				"ASTROEX_MAX_LLM_OUTPUT_TOKENS must be a positive integer",
+			);
+		}
+		return budget;
+	}
+
+	private getRunDeadlineMs(): number | undefined {
+		const value = process.env.ASTROEX_LLM_DEADLINE_MS;
+		if (!value) return undefined;
+		const deadline = Number(value);
+		if (!Number.isSafeInteger(deadline) || deadline < 1) {
+			throw new Error("ASTROEX_LLM_DEADLINE_MS must be a positive integer");
+		}
+		return deadline;
+	}
+
+	private getTotalOutputTokenBudget(): number | undefined {
+		const value = process.env.ASTROEX_MAX_TOTAL_LLM_OUTPUT_TOKENS;
+		if (!value) return undefined;
+		const budget = Number(value);
+		if (!Number.isSafeInteger(budget) || budget < 1) {
+			throw new Error(
+				"ASTROEX_MAX_TOTAL_LLM_OUTPUT_TOKENS must be a positive integer",
+			);
+		}
+		return budget;
+	}
 
 	/**
 	 * Initialize the LLM service with provider configurations
@@ -208,12 +300,17 @@ export class LLMService {
 		},
 	};
 
+	private lastInitializedFingerprint = "";
+
 	/**
 	 * Initialize the LLM service with provider configurations
 	 * @param providers Array of AI provider configurations
 	 * @param defaultProvider Default provider name
 	 */
 	initialize(providers: AIProviderConfig[], defaultProvider?: string): void {
+		this.runStartedAt = Date.now();
+		this.requestCount = 0;
+		this.reservedOutputTokens = 0;
 		// Validate providers array
 		if (!providers || !Array.isArray(providers) || providers.length === 0) {
 			throw new Error("At least one provider must be specified");
@@ -232,7 +329,20 @@ export class LLMService {
 
 		this.providers.clear();
 
-		validatedProviders.forEach((provider) => {
+		const initFingerprint = JSON.stringify({
+			providers: validatedProviders.map((p) => ({
+				name: p.name,
+				baseUrl: p.baseUrl,
+				model: p.model,
+			})),
+			defaultProvider: defaultProvider ?? this.defaultProvider,
+		});
+		const isReinitialization =
+			this.lastInitializedFingerprint === initFingerprint;
+		this.lastInitializedFingerprint = initFingerprint;
+		const initLogLevel: LegacyLogLevel = isReinitialization ? "debug" : "info";
+
+		for (const provider of validatedProviders) {
 			// Sanitize log data to avoid exposing sensitive information
 			const sanitizedProvider = {
 				...provider,
@@ -243,7 +353,7 @@ export class LLMService {
 			log(
 				"LLMService",
 				`Initialized provider: ${provider.name} (${provider.baseUrl})`,
-				"info",
+				initLogLevel,
 				{
 					provider: provider.name,
 					baseUrl: provider.baseUrl,
@@ -251,7 +361,7 @@ export class LLMService {
 					maskedApiKey: sanitizedProvider.apiKey,
 				},
 			);
-		});
+		}
 
 		if (
 			defaultProvider &&
@@ -263,7 +373,7 @@ export class LLMService {
 				log(
 					"LLMService",
 					`Set default provider to: ${defaultProvider}`,
-					"info",
+					initLogLevel,
 				);
 			} else {
 				log(
@@ -277,7 +387,7 @@ export class LLMService {
 		log(
 			"LLMService",
 			`LLM service initialized with ${validatedProviders.length} providers`,
-			"info",
+			initLogLevel,
 			{
 				providerCount: validatedProviders.length,
 				defaultProvider: this.defaultProvider,
@@ -459,11 +569,49 @@ export class LLMService {
 	 */
 	async call(request: LLMRequest): Promise<LLMResponse> {
 		const startTime = performance.now();
+		const deadline = this.getRunDeadlineMs();
+		if (deadline !== undefined && Date.now() - this.runStartedAt >= deadline) {
+			throw new Error(
+				`LLM run deadline exceeded (${deadline}ms). Set ASTROEX_LLM_DEADLINE_MS to raise the limit.`,
+			);
+		}
+		const budget = this.getRequestBudget();
+		if (budget !== undefined && this.requestCount >= budget) {
+			throw new Error(
+				`LLM request budget exhausted (${budget}). Set ASTROEX_MAX_LLM_REQUESTS to raise the limit.`,
+			);
+		}
 		this.requestCount++;
 
 		try {
 			// Validate request
 			const validatedRequest = LLMRequestSchema.parse(request);
+			if (
+				validatedRequest.hideReasoningTokens ||
+				process.env.ASTROEX_HIDE_REASONING === "1"
+			) {
+				validatedRequest.showReasoningTokens = false;
+			}
+			const outputTokenBudget = this.getOutputTokenBudget();
+			if (
+				outputTokenBudget !== undefined &&
+				validatedRequest.maxTokens > outputTokenBudget
+			) {
+				throw new Error(
+					`LLM output-token budget exceeded (${validatedRequest.maxTokens} requested; limit ${outputTokenBudget}).`,
+				);
+			}
+			const totalOutputTokenBudget = this.getTotalOutputTokenBudget();
+			if (
+				totalOutputTokenBudget !== undefined &&
+				this.reservedOutputTokens + validatedRequest.maxTokens >
+					totalOutputTokenBudget
+			) {
+				throw new Error(
+					`Total LLM output-token budget exceeded (${this.reservedOutputTokens + validatedRequest.maxTokens} requested; limit ${totalOutputTokenBudget}).`,
+				);
+			}
+			this.reservedOutputTokens += validatedRequest.maxTokens;
 			const provider =
 				this.providers.get(validatedRequest.provider) ||
 				this.providers.get(this.defaultProvider);
@@ -474,18 +622,43 @@ export class LLMService {
 				);
 			}
 
-			log(
-				"LLMService",
-				`Making LLM call to ${validatedRequest.provider}/${validatedRequest.model}`,
-				"log",
-				{
+			const shouldLogPayload =
+				process.env.ASTROEX_LOG_LLM_PAYLOADS === "1" ||
+				process.env.ASTROEX_LOG_LLM_PAYLOADS === "true" ||
+				logger.isLevelEnabled("trace");
+
+			if (shouldLogPayload) {
+				const formattedReq = formatLLMRequest({
 					provider: validatedRequest.provider,
 					model: validatedRequest.model,
 					temperature: validatedRequest.temperature,
 					topP: validatedRequest.topP,
 					maxTokens: validatedRequest.maxTokens,
-				},
-			);
+					timeout: validatedRequest.timeout,
+					messages: validatedRequest.messages,
+					responseSchema: validatedRequest.responseSchema,
+					...(validatedRequest.reasoning_effort !== undefined &&
+					validatedRequest.reasoning_effort !== ""
+						? { reasoning_effort: validatedRequest.reasoning_effort }
+						: {}),
+				});
+				logger.debug(`\n${formattedReq}`);
+			} else {
+				logger.info(
+					`Making LLM call to ${validatedRequest.provider}/${validatedRequest.model}`,
+					{
+						provider: validatedRequest.provider,
+						model: validatedRequest.model,
+						temperature: validatedRequest.temperature,
+						topP: validatedRequest.topP,
+						maxTokens: validatedRequest.maxTokens,
+						...(validatedRequest.reasoning_effort !== undefined &&
+						validatedRequest.reasoning_effort !== ""
+							? { reasoning_effort: validatedRequest.reasoning_effort }
+							: {}),
+					},
+				);
+			}
 
 			const response = await this.makeProviderCall(provider, validatedRequest);
 			const endTime = performance.now();
@@ -529,15 +702,26 @@ export class LLMService {
 				}
 			}
 
-			log(
-				"LLMService",
+			if (shouldLogPayload) {
+				const formattedRes = formatLLMResponse({
+					provider: validatedRequest.provider,
+					model: validatedRequest.model,
+					duration,
+					content: parsedContent,
+					usage: response.usage,
+					finishReason: response.finishReason,
+					contentStreamed: Boolean(validatedRequest.showResponseStream),
+				});
+				logger.debug(`\n${formattedRes}`);
+			}
+
+			logger.info(
 				`LLM call completed successfully in ${formatDuration(duration)}`,
-				"info",
 				{
 					provider: validatedRequest.provider,
 					model: validatedRequest.model,
 					tokensUsed: response.usage.totalTokens,
-					duration,
+					durationMs: duration,
 				},
 			);
 
@@ -947,10 +1131,9 @@ export class LLMService {
 
 		try {
 			const result = await this.call(request);
-			// Circuit breaker success is handled internally in execute method
 			return result;
 		} catch (error: unknown) {
-			// Circuit breaker failure is handled internally in execute method
+			// Error handling and retry backoff managed below
 
 			const errorMessage =
 				error instanceof Error ? error.message : String(error);
@@ -975,21 +1158,20 @@ export class LLMService {
 
 				await new Promise((resolve) => setTimeout(resolve, actualDelay));
 				return this.retryCall(request, maxRetries, retryDelay, attempt + 1);
-			} else {
-				log(
-					"LLMService",
-					`Max retries (${maxRetries}) exceeded for provider ${request.provider}`,
-					"error",
-					{
-						error: errorMessage,
-						provider: request.provider,
-						totalAttempts: attempt + 1,
-					},
-				);
-				throw new Error(
-					`Max retries exceeded for provider ${request.provider}: ${errorMessage}`,
-				);
 			}
+			log(
+				"LLMService",
+				`Max retries (${maxRetries}) exceeded for provider ${request.provider}`,
+				"error",
+				{
+					error: errorMessage,
+					provider: request.provider,
+					totalAttempts: attempt + 1,
+				},
+			);
+			throw new Error(
+				`Max retries exceeded for provider ${request.provider}: ${errorMessage}`,
+			);
 		}
 	}
 
@@ -1072,29 +1254,42 @@ export class LLMService {
 						...(request.provider === "openai" && request.responseSchema
 							? { response_format: { type: "json_object" } }
 							: {}),
+						...(request.reasoning_effort !== undefined &&
+						request.reasoning_effort !== ""
+							? {
+									reasoning_effort:
+										request.reasoning_effort as unknown as OpenAI.Chat.Completions.ChatCompletionReasoningEffort,
+								}
+							: {}),
 					};
 
-				const stream =
-					await client.chat.completions.create(streamingParams);
+				const stream = await client.chat.completions.create(streamingParams);
 				let accumulatedContent = "";
+				const reasoningFader = createStreamFader("reasoning", {
+					cycleLength: 100,
+				});
+				const responseFader = createStreamFader("streaming", {
+					cycleLength: 120,
+				});
 				let printedReasoningHeader = false;
 				let printedResponseHeader = false;
 
 				for await (const chunk of stream) {
-					const delta = chunk.choices[0]?.delta as any;
+					const delta = chunk.choices[0]?.delta as ReasoningFields | undefined;
 					if (!delta) continue;
 
 					const reasoningChunk =
-						delta.reasoning_content ||
-						delta.reasoning ||
-						delta.thinking;
+						delta.reasoning_content || delta.reasoning || delta.thinking;
 
 					if (request.showReasoningTokens && reasoningChunk) {
 						if (!printedReasoningHeader) {
-							process.stdout.write("\n\x1b[36m[Reasoning Stream]\x1b[0m ");
+							const hdr = applyHsvFade("\n╭─ [Reasoning Stream]", "reasoning", {
+								bold: true,
+							});
+							process.stdout.write(`${hdr}\n│ `);
 							printedReasoningHeader = true;
 						}
-						process.stdout.write(`\x1b[90m${reasoningChunk}\x1b[0m`);
+						process.stdout.write(reasoningFader.fadeChunk(reasoningChunk));
 					}
 
 					if (delta.content) {
@@ -1102,18 +1297,28 @@ export class LLMService {
 						if (request.showResponseStream) {
 							if (!printedResponseHeader) {
 								if (printedReasoningHeader) {
-									process.stdout.write("\n");
+									const closeReasoning = applyHsvFade("\n╰─", "reasoning");
+									process.stdout.write(`${closeReasoning}\n`);
 								}
-								process.stdout.write("\n\x1b[32m[Response Stream]\x1b[0m ");
+								const hdr = applyHsvFade(
+									"\n╭─ [Response Stream]",
+									"streaming",
+									{ bold: true },
+								);
+								process.stdout.write(`${hdr}\n│ `);
 								printedResponseHeader = true;
 							}
-							process.stdout.write(delta.content);
+							process.stdout.write(responseFader.fadeChunk(delta.content));
 						}
 					}
 				}
 
-				if (printedReasoningHeader || printedResponseHeader) {
-					process.stdout.write("\n\n");
+				if (printedResponseHeader) {
+					const closeStream = applyHsvFade("\n╰─\n", "streaming");
+					process.stdout.write(closeStream);
+				} else if (printedReasoningHeader) {
+					const closeReasoning = applyHsvFade("\n╰─\n", "reasoning");
+					process.stdout.write(closeReasoning);
 				}
 
 				if (accumulatedContent) {
@@ -1146,6 +1351,13 @@ export class LLMService {
 				temperature: request.temperature,
 				top_p: request.topP,
 				max_tokens: request.maxTokens,
+				...(request.reasoning_effort !== undefined &&
+				request.reasoning_effort !== ""
+					? {
+							reasoning_effort:
+								request.reasoning_effort as unknown as OpenAI.Chat.Completions.ChatCompletionReasoningEffort,
+						}
+					: {}),
 			};
 
 		// Add JSON Mode for OpenAI if response_schema is provided
@@ -1155,15 +1367,16 @@ export class LLMService {
 
 		const response = await client.chat.completions.create(openaiRequest);
 
-		const message = response.choices[0]?.message as any;
-		if (request.showReasoningTokens && message) {
-			const reasoningText =
-				message.reasoning_content || message.reasoning || message.thinking;
-			if (reasoningText) {
-				console.log(
-					`\n\x1b[36m[Reasoning Tokens]\x1b[0m\n\x1b[90m${reasoningText}\x1b[0m\n`,
-				);
-			}
+		const message = response.choices[0]?.message as ReasoningFields | undefined;
+		const reasoningText =
+			message?.reasoning_content || message?.reasoning || message?.thinking;
+		if (request.showReasoningTokens && reasoningText) {
+			const reasoningBlock = formatReasoningBlock({
+				provider: request.provider,
+				model: request.model,
+				reasoningContent: reasoningText,
+			});
+			logger.debug(`\n${reasoningBlock}`);
 		}
 
 		const usage = response.usage;
@@ -1197,7 +1410,7 @@ export class LLMService {
 			if (truncatedContent !== content) {
 				log(
 					"LLMService",
-					`Truncated OpenAI response to respect maxTokens limit`,
+					"Truncated OpenAI response to respect maxTokens limit",
 					"info",
 					{
 						provider: request.provider,
@@ -1211,6 +1424,15 @@ export class LLMService {
 			}
 		}
 
+		const usageDetails = usage as {
+			prompt_tokens?: number;
+			completion_tokens?: number;
+			total_tokens?: number;
+			completion_tokens_details?: { reasoning_tokens?: number };
+		};
+		const reasoningTokens =
+			usageDetails.completion_tokens_details?.reasoning_tokens;
+
 		return {
 			content,
 			provider: request.provider,
@@ -1222,9 +1444,12 @@ export class LLMService {
 					totalTokensUsed,
 					request.maxTokens || totalTokensUsed,
 				),
+				reasoningTokens,
 			},
 			duration: 0, // Will be set by caller
 			timestamp: new Date().toISOString(),
+			finishReason: response.choices[0]?.finish_reason ?? undefined,
+			reasoningContent: reasoningText ?? undefined,
 		};
 	}
 
@@ -1399,29 +1624,42 @@ export class LLMService {
 						...(request.responseSchema
 							? { response_format: { type: "json_object" } }
 							: {}),
+						...(request.reasoning_effort !== undefined &&
+						request.reasoning_effort !== ""
+							? {
+									reasoning_effort:
+										request.reasoning_effort as unknown as OpenAI.Chat.Completions.ChatCompletionReasoningEffort,
+								}
+							: {}),
 					};
 
-				const stream =
-					await client.chat.completions.create(streamingParams);
+				const stream = await client.chat.completions.create(streamingParams);
 				let accumulatedContent = "";
+				const reasoningFader = createStreamFader("reasoning", {
+					cycleLength: 100,
+				});
+				const responseFader = createStreamFader("streaming", {
+					cycleLength: 120,
+				});
 				let printedReasoningHeader = false;
 				let printedResponseHeader = false;
 
 				for await (const chunk of stream) {
-					const delta = chunk.choices[0]?.delta as any;
+					const delta = chunk.choices[0]?.delta as ReasoningFields | undefined;
 					if (!delta) continue;
 
 					const reasoningChunk =
-						delta.reasoning_content ||
-						delta.reasoning ||
-						delta.thinking;
+						delta.reasoning_content || delta.reasoning || delta.thinking;
 
 					if (request.showReasoningTokens && reasoningChunk) {
 						if (!printedReasoningHeader) {
-							process.stdout.write("\n\x1b[36m[Reasoning Stream]\x1b[0m ");
+							const hdr = applyHsvFade("\n╭─ [Reasoning Stream]", "reasoning", {
+								bold: true,
+							});
+							process.stdout.write(`${hdr}\n│ `);
 							printedReasoningHeader = true;
 						}
-						process.stdout.write(`\x1b[90m${reasoningChunk}\x1b[0m`);
+						process.stdout.write(reasoningFader.fadeChunk(reasoningChunk));
 					}
 
 					if (delta.content) {
@@ -1429,18 +1667,28 @@ export class LLMService {
 						if (request.showResponseStream) {
 							if (!printedResponseHeader) {
 								if (printedReasoningHeader) {
-									process.stdout.write("\n");
+									const closeReasoning = applyHsvFade("\n╰─", "reasoning");
+									process.stdout.write(`${closeReasoning}\n`);
 								}
-								process.stdout.write("\n\x1b[32m[Response Stream]\x1b[0m ");
+								const hdr = applyHsvFade(
+									"\n╭─ [Response Stream]",
+									"streaming",
+									{ bold: true },
+								);
+								process.stdout.write(`${hdr}\n│ `);
 								printedResponseHeader = true;
 							}
-							process.stdout.write(delta.content);
+							process.stdout.write(responseFader.fadeChunk(delta.content));
 						}
 					}
 				}
 
-				if (printedReasoningHeader || printedResponseHeader) {
-					process.stdout.write("\n\n");
+				if (printedResponseHeader) {
+					const closeStream = applyHsvFade("\n╰─\n", "streaming");
+					process.stdout.write(closeStream);
+				} else if (printedReasoningHeader) {
+					const closeReasoning = applyHsvFade("\n╰─\n", "reasoning");
+					process.stdout.write(closeReasoning);
 				}
 
 				if (accumulatedContent) {
@@ -1473,6 +1721,13 @@ export class LLMService {
 				temperature: request.temperature,
 				top_p: request.topP,
 				max_tokens: request.maxTokens,
+				...(request.reasoning_effort !== undefined &&
+				request.reasoning_effort !== ""
+					? {
+							reasoning_effort:
+								request.reasoning_effort as unknown as OpenAI.Chat.Completions.ChatCompletionReasoningEffort,
+						}
+					: {}),
 			};
 
 		// Add JSON Mode for POE if response_schema is provided
@@ -1482,15 +1737,16 @@ export class LLMService {
 
 		const response = await client.chat.completions.create(poeRequest);
 
-		const message = response.choices[0]?.message as any;
-		if (request.showReasoningTokens && message) {
-			const reasoningText =
-				message.reasoning_content || message.reasoning || message.thinking;
-			if (reasoningText) {
-				console.log(
-					`\n\x1b[36m[Reasoning Tokens]\x1b[0m\n\x1b[90m${reasoningText}\x1b[0m\n`,
-				);
-			}
+		const message = response.choices[0]?.message as ReasoningFields | undefined;
+		const reasoningText =
+			message?.reasoning_content || message?.reasoning || message?.thinking;
+		if (request.showReasoningTokens && reasoningText) {
+			const reasoningBlock = formatReasoningBlock({
+				provider: request.provider,
+				model: request.model,
+				reasoningContent: reasoningText,
+			});
+			logger.debug(`\n${reasoningBlock}`);
 		}
 
 		const usage = response.usage;
@@ -1524,7 +1780,7 @@ export class LLMService {
 			if (truncatedContent !== content) {
 				log(
 					"LLMService",
-					`Truncated POE response to respect maxTokens limit`,
+					"Truncated POE response to respect maxTokens limit",
 					"info",
 					{
 						provider: request.provider,
@@ -1538,6 +1794,15 @@ export class LLMService {
 			}
 		}
 
+		const usageDetails = usage as {
+			prompt_tokens?: number;
+			completion_tokens?: number;
+			total_tokens?: number;
+			completion_tokens_details?: { reasoning_tokens?: number };
+		};
+		const reasoningTokens =
+			usageDetails.completion_tokens_details?.reasoning_tokens;
+
 		return {
 			content,
 			provider: request.provider,
@@ -1549,9 +1814,12 @@ export class LLMService {
 					totalTokensUsed,
 					request.maxTokens || totalTokensUsed,
 				),
+				reasoningTokens,
 			},
 			duration: 0, // Will be set by caller
 			timestamp: new Date().toISOString(),
+			finishReason: response.choices[0]?.finish_reason ?? undefined,
+			reasoningContent: reasoningText ?? undefined,
 		};
 	}
 

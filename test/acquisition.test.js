@@ -7,10 +7,10 @@ const test = require("node:test");
 const { toLegacyJob } = require("../dist/acquisition/normalize");
 const {
 	getProviderCooldownMs,
-	isJobDbCapacityError,
+	isJobRepositoryCapacityError,
+	loadAcquisitionCheckpoint,
 	shouldDisableAcquisitionSource,
 } = require("../dist/commands/acquireJobs");
-const { JobDB } = require("../dist/jobDB");
 
 test("canonical jobs retain provider identity through the legacy compatibility projection", () => {
 	const job = {
@@ -20,7 +20,7 @@ test("canonical jobs retain provider identity through the legacy compatibility p
 		canonicalUrl: "https://www.indeed.com/viewjob?jk=abc123",
 		title: "Security Engineer",
 		company: "Example Corp",
-		location: "Example City, NY, USA",
+		location: "Example City, ST, USA",
 		description: "Job description",
 		descriptionRepresentation: "markdown",
 		acquiredAt: "2026-08-11T00:00:00.000Z",
@@ -30,63 +30,6 @@ test("canonical jobs retain provider identity through the legacy compatibility p
 	assert.equal(legacy.sourceJobId, "abc123");
 	assert.equal(legacy.url, job.canonicalUrl);
 	assert.equal(legacy.descriptionText, "Job description");
-});
-
-test("JobDB keeps source IDs separate", async () => {
-	const directory = await fs.mkdtemp(
-		path.join(os.tmpdir(), "astroex-acquisition-"),
-	);
-	const db = new JobDB({
-		dbFilePath: path.join(directory, "jobDB.json"),
-		defaultExpirationMs: 60_000,
-		enableJobDB: true,
-		backupEnabled: false,
-	});
-	try {
-		await db.initialize();
-		await db.load();
-		const added = await db.addSearchedJobs([
-			{
-				id: "linkedin:123",
-				source: "linkedin",
-				sourceJobId: "123",
-				title: "Security Engineer",
-				company: "Example Corp",
-				url: "https://www.linkedin.com/jobs/view/123",
-			},
-			{
-				id: "indeed:123",
-				source: "indeed",
-				sourceJobId: "123",
-				title: "Security Engineer",
-				company: "Example Corp",
-				url: "https://www.indeed.com/viewjob?jk=123",
-			},
-		]);
-		assert.equal(added, 2);
-		assert.equal(db.size(), 2);
-		assert.equal(
-			db.isJobSeen({
-				id: "linkedin:123",
-				source: "linkedin",
-				title: "Security Engineer",
-				company: "Example Corp",
-			}),
-			true,
-		);
-		assert.equal(
-			db.isJobSeen({
-				id: "indeed:123",
-				source: "indeed",
-				title: "Security Engineer",
-				company: "Example Corp",
-			}),
-			true,
-		);
-	} finally {
-		await db.close();
-		await fs.rm(directory, { recursive: true, force: true });
-	}
 });
 
 test("unrecoverable provider rejections disable the source for the active run", () => {
@@ -112,7 +55,7 @@ test("retryable provider failures use bounded exponential cooldowns", () => {
 	assert.equal(
 		getProviderCooldownMs(
 			{
-				source: "linkedin",
+				source: "indeed",
 				message: "Request failed with status code 429",
 				retryable: true,
 			},
@@ -123,7 +66,7 @@ test("retryable provider failures use bounded exponential cooldowns", () => {
 	assert.equal(
 		getProviderCooldownMs(
 			{
-				source: "linkedin",
+				source: "indeed",
 				message: "Request failed with status code 429",
 				retryable: true,
 			},
@@ -140,13 +83,15 @@ test("retryable provider failures use bounded exponential cooldowns", () => {
 	);
 });
 
-test("JobDB capacity errors are recognized as non-fatal acquisition bookkeeping failures", () => {
+test("repository capacity errors are recognized as non-fatal acquisition bookkeeping failures", () => {
 	assert.equal(
-		isJobDbCapacityError(new Error("Database size limit (10000) reached")),
+		isJobRepositoryCapacityError(
+			new Error("Database size limit (10000) reached"),
+		),
 		true,
 	);
 	assert.equal(
-		isJobDbCapacityError(
+		isJobRepositoryCapacityError(
 			new Error(
 				"Database size limit (3) reached; all retained entries are JD or judgment checkpoints",
 			),
@@ -154,7 +99,43 @@ test("JobDB capacity errors are recognized as non-fatal acquisition bookkeeping 
 		true,
 	);
 	assert.equal(
-		isJobDbCapacityError(new Error("database is unavailable")),
+		isJobRepositoryCapacityError(new Error("database is unavailable")),
 		false,
+	);
+});
+
+test("acquisition checkpoint ignores retired or malformed records", async (t) => {
+	const directory = await fs.mkdtemp(
+		path.join(os.tmpdir(), "astroex-checkpoint-"),
+	);
+	t.after(() => fs.rm(directory, { recursive: true, force: true }));
+	const checkpoint = path.join(directory, "acquired_jobs.json");
+	await fs.writeFile(
+		checkpoint,
+		JSON.stringify([
+			{
+				id: "indeed:valid",
+				source: "indeed",
+				canonicalUrl: "https://www.indeed.com/viewjob?jk=valid",
+				title: "Security Engineer",
+				company: "Example Corp",
+				descriptionRepresentation: "unknown",
+				acquiredAt: "2026-09-07T00:00:00.000Z",
+			},
+			{
+				id: "retired",
+				source: "linkedin",
+				canonicalUrl: "https://www.linkedin.com/jobs/view/retired",
+				title: "Retired Job",
+				company: "Example Corp",
+				acquiredAt: "2026-09-07T00:00:00.000Z",
+			},
+			{ id: "incomplete" },
+		]),
+	);
+	const jobs = await loadAcquisitionCheckpoint(checkpoint);
+	assert.deepEqual(
+		jobs.map((job) => job.id),
+		["indeed:valid"],
 	);
 });

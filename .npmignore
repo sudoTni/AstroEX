@@ -1,0 +1,28 @@
+# package.json#files is the primary package allowlist. This deny list is a
+# second line of defense if the allowlist changes.
+node_modules/
+src/
+test/
+profile/
+data/
+logs/
+materials/
+materials-deployed/
+coverage/
+.nyc_output/
+.github/
+.env
+.env.*
+!.env.example
+*.log
+*.sqlite
+*.sqlite-*
+*.db
+*.db-*
+*.tgz
+*.tar.gz
+*.jsonl
+*_payload_*.json
+debug_scrape_output.json
+deployMaterials.gs
+pack.json

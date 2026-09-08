@@ -1,7 +1,7 @@
 /**
  * Vendored and adapted from ts-jobspy-main/src/util.ts (MIT).
  * Only the HTTP, proxy, retry, and text-conversion primitives required by the
- * supported LinkedIn and Indeed providers are retained here.
+ * supported Indeed provider is retained here.
  */
 import axios, {
 	type AxiosInstance,
@@ -96,11 +96,4 @@ export function descriptionToFormat(
 	if (format === "plain")
 		return cheerio.load(html).text().replace(/\s+/g, " ").trim();
 	return turndown.turndown(html).trim();
-}
-
-export function extractEmails(text?: string): string[] | undefined {
-	if (!text) return undefined;
-	return (
-		text.match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g) ?? undefined
-	);
 }

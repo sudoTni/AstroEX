@@ -1,11 +1,11 @@
 /**
  * Source-neutral job acquisition model.
  *
- * This boundary keeps acquisition concerns separate from AstroEX's legacy
- * LinkedIn-shaped job model. It is deliberately small so providers can be
- * replaced without changing filtering, JobDB, or LLM commands.
+ * This boundary keeps Indeed acquisition separate from AstroEX's processing,
+ * filtering, and LLM commands. It is deliberately small so the provider can
+ * be replaced without changing those downstream stages.
  */
-export type AcquisitionSource = "linkedin" | "indeed";
+export type AcquisitionSource = "indeed";
 
 export type DescriptionRepresentation =
 	| "html"
@@ -50,15 +50,15 @@ export interface AcquisitionQuery {
 	location?: string;
 	distance?: number;
 	resultsWanted: number;
-	/** Bounded independently because LinkedIn's guest endpoint is rate-limited. */
-	linkedinResultsWanted?: number;
 	hoursOld?: number;
 	isRemote?: boolean;
+	remoteOnly?: boolean;
 	jobType?: "fulltime" | "parttime" | "contract" | "internship";
 	easyApply?: boolean;
 	offset?: number;
 	indeedCountry?: string;
-	linkedinFetchDescription?: boolean;
+	/** Optional Indeed client-key override; prefer ASTROEX_INDEED_API_KEY. */
+	indeedApiKey?: string;
 	includeDescriptions?: boolean;
 	descriptionFormat?: "markdown" | "html" | "plain";
 	proxies?: string[];

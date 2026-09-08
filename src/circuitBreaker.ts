@@ -10,7 +10,7 @@
  * - Performance monitoring and metrics
  * - Graceful degradation for service unavailable scenarios
  *
- * @author tjenkel
+ * @author AstroEX Contributors
  * @license MIT
  * @since 3.2.0
  */
@@ -72,7 +72,7 @@ export class CircuitBreaker {
 			failureThreshold: config.failureThreshold ?? 5,
 			timeout: config.timeout ?? 30000,
 			recoveryTimeout: config.recoveryTimeout ?? 60000,
-			expectedException: config.expectedException ?? [Error],
+			expectedException: config.expectedException ?? [],
 			monitoringPeriod: config.monitoringPeriod ?? 60000,
 			halfOpenMaxRequests: config.halfOpenMaxRequests ?? 3,
 		};
@@ -426,7 +426,7 @@ export const CircuitBreakerFactory = {
 		failureThreshold: 5,
 		timeout: 30000,
 		recoveryTimeout: 60000,
-		expectedException: [Error],
+		expectedException: [],
 		monitoringPeriod: 60000,
 		halfOpenMaxRequests: 3,
 	},

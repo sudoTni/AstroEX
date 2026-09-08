@@ -71,7 +71,7 @@ export async function retryWithBackoff<T>(
 	onRetry?: (attempt: number, error: Error, delay: number) => void,
 ): Promise<T> {
 	const finalConfig = { ...DEFAULT_RETRY_CONFIG, ...config };
-	let lastError: Error;
+	let lastError: Error | undefined;
 
 	for (let attempt = 0; attempt <= finalConfig.maxRetries; attempt++) {
 		try {
@@ -101,7 +101,7 @@ export async function retryWithBackoff<T>(
 		}
 	}
 
-	throw lastError!;
+	throw lastError ?? new Error("Retry operation failed without an error");
 }
 
 /**

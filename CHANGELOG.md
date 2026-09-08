@@ -9,7 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- Synchronized application, package, runtime, statistics, documentation, and generated-artifact version metadata at 5.0.0.
+- Updated application, package, runtime, statistics, and documentation version metadata to 5.0.0.
+- Corrected README command examples and version-maintenance guidance to match the current repository.
+
+## [4.0.0] - 2026-08-10
+
+### Changed
+
+- Synchronized application, package, runtime, statistics, documentation, and generated-artifact version metadata at 4.0.0.
 
 ## [3.5.0] - 2025-11-13
 

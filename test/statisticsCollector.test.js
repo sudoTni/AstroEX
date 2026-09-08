@@ -1,5 +1,6 @@
 const assert = require("node:assert/strict");
 const test = require("node:test");
+const { version: packageVersion } = require("../package.json");
 
 const {
 	createStatisticsCollector,
@@ -23,6 +24,7 @@ test("completed statistics retain standard and custom metrics", async () => {
 
 	const summary = stats.endCollection();
 
+	assert.equal(summary.metadata.version, packageVersion);
 	assert.equal(summary.resources.files.read, 2);
 	assert.equal(summary.data.recordsProcessed, 7);
 	assert.equal(summary.operations.total, 1);

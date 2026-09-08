@@ -22,7 +22,7 @@ export interface JobInterface {
 	salaryCurrency: SalaryCurrency;
 	stackRequired: string[];
 
-	// New fields from enhanced LinkedIn scraping
+	// Optional fields retained for compatibility with historical artifacts.
 	applicants?: string;
 	seniorityLevel?: string;
 	employmentType?: string;
@@ -31,11 +31,17 @@ export interface JobInterface {
 	salaryRange?: string; // Added from getJobDescription
 	postedTime?: string; // Added from getJobDescription
 
-	// Source-neutral acquisition metadata. These are additive so legacy LinkedIn
-	// artifacts remain valid while new Indeed/LinkedIn acquisitions preserve IDs.
-	source?: "linkedin" | "indeed";
+	// Source-neutral acquisition metadata for Indeed artifacts.
+	source?: "indeed";
 	sourceJobId?: string;
 	canonicalUrl?: string;
 	directUrl?: string;
 	acquiredAt?: string;
+
+	// JobCloth / JobJudge analysis metadata
+	confidence?: number;
+	rationale?: string;
+	isWorthInvestigating?: boolean;
+	isVeryHighlyAligned?: boolean;
+	isHighlyAligned?: boolean;
 }

@@ -7,8 +7,8 @@
 
 import type { StatisticsSummary, Timer } from "./StatisticsCollector";
 import {
-	createStatisticsCollector,
 	StatisticsCollector,
+	createStatisticsCollector,
 } from "./StatisticsCollector";
 
 // Export convenience functions for common statistics operations

@@ -1,0 +1,33 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.x
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run audit
+      - run: |
+          npm pack --dry-run --json > pack.json
+          node -e 'const raw=require("./pack.json"); const entry=Array.isArray(raw)?raw[0]:(raw.astroex??raw); const privatePath=/^(data|logs|materials|materials-deployed|profile|test)\//; if ((entry.files||[]).some(({path}) => privatePath.test(path))) process.exit(1)'
+      - run: |
+          npm pack --pack-destination "$RUNNER_TEMP"
+          mkdir "$RUNNER_TEMP/astroex-package-smoke"
+          cd "$RUNNER_TEMP/astroex-package-smoke"
+          npm init --yes
+          npm install "$RUNNER_TEMP"/astroex-*.tgz --ignore-scripts
+          ./node_modules/.bin/astroex --help

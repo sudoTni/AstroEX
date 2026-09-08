@@ -1,20 +1,29 @@
 /**
  * AstroEX Type Definitions
- * Version 5.0.0
+ * Version 0.13.0
  *
  * This module defines all TypeScript interfaces and types used throughout the application.
  * These types ensure type safety and consistent data structures across all modules.
  *
- * @author tjenkel
+ * @author AstroEX Contributors
  * @license MIT
  */
+
+import type { LogLevel } from "./logging/types";
 
 export interface GlobalArgs {
 	logDir?: string;
 	logFile?: string;
-	logLevel?: "debug" | "info" | "warn" | "error";
+	logLevel?: LogLevel;
+	logFormat?: "pretty" | "json";
 	disableFileLogging?: boolean;
 	verbose?: boolean;
+	"show-reasoning"?: boolean;
+	"show-reasoning-tokens"?: boolean;
+	"hide-reasoning"?: boolean;
+	"hide-reasoning-tokens"?: boolean;
+	sr?: boolean;
+	hr?: boolean;
 }
 
 export interface JobClothArgs extends GlobalArgs {
@@ -35,9 +44,16 @@ export interface JobClothArgs extends GlobalArgs {
 	provider?: string;
 	"show-reasoning"?: boolean;
 	"show-reasoning-tokens"?: boolean;
+	"hide-reasoning"?: boolean;
+	"hide-reasoning-tokens"?: boolean;
+	sr?: boolean;
+	hr?: boolean;
 	"show-stream"?: boolean;
 	"show-stream-tokens"?: boolean;
 	"stream-response"?: boolean;
+	"jc-reasoning-effort"?: string;
+	"reasoning-effort"?: string;
+	reasoningEffort?: string;
 }
 
 export interface JobJudgeArgs extends GlobalArgs {
@@ -61,9 +77,16 @@ export interface JobJudgeArgs extends GlobalArgs {
 	"use-jobdb"?: boolean;
 	"show-reasoning"?: boolean;
 	"show-reasoning-tokens"?: boolean;
+	"hide-reasoning"?: boolean;
+	"hide-reasoning-tokens"?: boolean;
+	sr?: boolean;
+	hr?: boolean;
 	"show-stream"?: boolean;
 	"show-stream-tokens"?: boolean;
 	"stream-response"?: boolean;
+	"jj-reasoning-effort"?: string;
+	"reasoning-effort"?: string;
+	reasoningEffort?: string;
 }
 
 export interface ProcessDataArgs extends GlobalArgs {
@@ -88,31 +111,16 @@ export interface MakeMaterialsArgs extends GlobalArgs {
 	model?: string;
 	"show-reasoning"?: boolean;
 	"show-reasoning-tokens"?: boolean;
+	"hide-reasoning"?: boolean;
+	"hide-reasoning-tokens"?: boolean;
+	sr?: boolean;
+	hr?: boolean;
 	"show-stream"?: boolean;
 	"show-stream-tokens"?: boolean;
 	"stream-response"?: boolean;
-}
-
-export interface Er44zzModeArgs extends GlobalArgs {
-	mode: 1 | 2 | 3 | 4;
-	provider: string;
-	model: string;
-	"use-sys-prompt"?: boolean;
-	"test-mode": 0 | 1 | 2;
-	thoughts?: boolean;
-	"model-id"?: string;
-	"api-key"?: string;
-	"base-url"?: string;
-	temperature?: number;
-	top_p?: number;
-	"max-tokens"?: number;
-}
-
-export interface ScrapingArgs extends GlobalArgs {
-	headless?: boolean;
-	url?: string;
-	"output-file"?: string;
-	sleep?: number;
+	"mm-reasoning-effort"?: string;
+	"reasoning-effort"?: string;
+	reasoningEffort?: string;
 }
 
 export interface PerformanceMetrics {
@@ -132,7 +140,7 @@ export interface PerformanceMetrics {
 }
 
 export interface LLMRequest {
-	provider: "openai" | "gemini" | "mistral" | "openrouter" | "cerebras";
+	provider: "openai" | "gemini" | "mistral" | "openrouter" | "cerebras" | "poe";
 	model: string;
 	messages: {
 		role: "system" | "user" | "assistant";
@@ -144,7 +152,9 @@ export interface LLMRequest {
 	timeout?: number;
 	responseSchema?: unknown; // Optional Zod schema for response validation
 	showReasoningTokens?: boolean;
+	hideReasoningTokens?: boolean;
 	showResponseStream?: boolean;
+	reasoning_effort?: string;
 }
 
 export interface LLMResponse {
@@ -163,6 +173,8 @@ export interface LLMResponse {
 export interface JobAnalysisResult {
 	jobTitle: string;
 	isVeryHighlyAligned: boolean;
+	isWorthInvestigating?: boolean;
+	isHighlyAligned?: boolean;
 	rationale: string;
 	confidence: number;
 }
@@ -203,11 +215,7 @@ export interface ScrapedJob {
 	};
 }
 
-export interface JobInterface extends ScrapedJob {
-	confidence?: number;
-	isVeryHighlyAligned?: boolean;
-	rationale?: string;
-}
+export type { JobInterface } from "./models";
 
 export interface ApplicationConfig {
 	searchTerms: string[];

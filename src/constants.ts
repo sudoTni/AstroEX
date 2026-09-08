@@ -1,13 +1,12 @@
 /**
  * Application constants and configuration for AstroEX
- * Version 5.0.0
+ * Version 0.13.0
  *
  * This file contains all constants used throughout the application.
  * Centralized constants improve maintainability and consistency.
  *
  * Version 2.7.0 Improvements:
  * - Fixed merge conflicts in constants file
- * - Resolved regex escape character issues in scrapeJob.ts
  * - Fixed unterminated string literal in security.ts
  * - Improved control character handling in security functions
  * - Enhanced error handling and security validation
@@ -29,14 +28,14 @@ import * as path from "node:path";
 export const APP_NAME = "AstroEX";
 
 /** Application version */
-export const APP_VERSION = "5.0.0";
+export const APP_VERSION = "0.13.0";
 
 /** Application description */
 export const APP_DESCRIPTION =
-	"Advanced LinkedIn job scraping, filtering, and evaluation tool with enhanced API support, CLI parameter consistency, and AI-powered resume optimization";
+	"Indeed job acquisition, filtering, evaluation, and AI-powered application-material generation";
 
 /** Author information */
-export const AUTHOR = "tjenkel";
+export const AUTHOR = "AstroEX Contributors";
 
 /** Contributors */
 export const CONTRIBUTORS = [
@@ -50,7 +49,7 @@ export const CONTRIBUTORS = [
 export const LICENSE = "MIT";
 
 /** Minimum Node.js version */
-export const MIN_NODE_VERSION = "20.0.0";
+export const MIN_NODE_VERSION = "22.13.0";
 
 /** How long discovered or judged jobs remain protected from duplicate work. */
 export const JOB_DB_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
@@ -60,7 +59,7 @@ export const JOB_DB_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
 // =============================================================================
 
 /** Root directory path */
-export const ROOT_DIR = path.resolve(__dirname, "..", "..");
+export const ROOT_DIR = path.resolve(__dirname, "..");
 
 /** Data directory path */
 export const DATA_DIR = path.join(ROOT_DIR, "data");
@@ -72,7 +71,7 @@ export const LOGS_DIR = path.join(ROOT_DIR, "logs");
 export const MATERIALS_DIR = path.join(ROOT_DIR, "materials");
 
 /** External data directory path */
-export const EXTERNAL_DATA_DIR = path.join(ROOT_DIR, "user_data");
+export const EXTERNAL_DATA_DIR = path.join(ROOT_DIR, "profile");
 
 /** Resume file path */
 export const RESUME_FILE_PATH = path.join(EXTERNAL_DATA_DIR, "my_resume.txt");
@@ -135,14 +134,6 @@ export const DEFAULT_AI_CONFIG = {
 	timeout: 60,
 };
 
-/** Default scraping configuration */
-export const DEFAULT_SCRAPING_CONFIG = {
-	headless: true,
-	timeout: 30000,
-	concurrency: 1,
-	requestDelay: 1000,
-};
-
 /** Default job processing configuration */
 export const DEFAULT_JOB_PROCESSING_CONFIG = {
 	batch: 50,
@@ -196,97 +187,6 @@ export const PROVIDER_BASE_URLS = {
 		"https://generativelanguage.googleapis.com/v1beta/openai",
 	[SUPPORTED_AI_PROVIDERS.MISTRAL]: "https://api.mistral.ai/v1",
 } as const;
-
-// =============================================================================
-// PUPPETEER CONFIGURATION
-// =============================================================================
-
-/** Default Puppeteer launch options */
-export const PUPPETEER_LAUNCH_OPTIONS = {
-	headless: "new" as const,
-	args: [
-		"--no-sandbox",
-		"--disable-setuid-sandbox",
-		"--disable-dev-shm-usage",
-		"--disable-accelerated-2d-canvas",
-		"--no-first-run",
-		"--no-zygote",
-		"--disable-gpu",
-	],
-};
-
-/** Puppeteer viewport configuration */
-export const PUPPETEER_VIEWPORT = {
-	width: 1920,
-	height: 1080,
-};
-
-/** Default navigation timeout */
-export const DEFAULT_NAVIGATION_TIMEOUT = 30000;
-
-/** Default wait timeout */
-export const DEFAULT_WAIT_TIMEOUT = 10000;
-
-// =============================================================================
-// LINKEDIN SPECIFIC CONSTANTS
-// =============================================================================
-
-/** LinkedIn base URL */
-export const LINKEDIN_BASE_URL = "https://www.linkedin.com";
-
-/** LinkedIn jobs URL */
-export const LINKEDIN_JOBS_URL = "https://www.linkedin.com/jobs";
-
-/** LinkedIn authentication wall path */
-export const LINKEDIN_AUTHWALL_PATH = "linkedin.com/authwall";
-
-/** LinkedIn job search card selector */
-export const LINKEDIN_JOB_SEARCH_SELECTOR = ".job-search-card";
-
-/** LinkedIn job title selectors */
-export const LINKEDIN_JOB_TITLE_SELECTORS = [
-	"h1.top-card-layout__title",
-	"h1.topcard__title",
-];
-
-/** LinkedIn company name selectors */
-export const LINKEDIN_COMPANY_SELECTORS = ["a.topcard__org-name-link"];
-
-/** LinkedIn location selector */
-export const LINKEDIN_LOCATION_SELECTOR =
-	"//div[contains(@class,'topcard__flavor-row')]/span[contains(@class, 'topcard__flavor--bullet')]/text()";
-
-/** LinkedIn posted time selectors */
-export const LINKEDIN_POSTED_TIME_SELECTORS = ["span.posted-time-ago__text"];
-
-/** LinkedIn applicants selector */
-export const LINKEDIN_APPLICANTS_SELECTOR = "span.num-applicants__caption";
-
-/** LinkedIn salary selectors */
-export const LINKEDIN_SALARY_SELECTORS = [
-	"div.compensation__salary",
-	"span.main-job-card__salary-info",
-];
-
-/** LinkedIn job criteria selectors */
-export const LINKEDIN_JOB_CRITERIA_SELECTORS = {
-	seniority:
-		"//h3[contains(text(), 'Seniority level')]/following-sibling::span/text()",
-	employment:
-		"//h3[contains(text(), 'Employment type')]/following-sibling::span/text()",
-	function:
-		"//h3[contains(text(), 'Job function')]/following-sibling::span/text()",
-	industries:
-		"//h3[contains(text(), 'Industries')]/following-sibling::span/text()",
-};
-
-/** LinkedIn description selectors */
-export const LINKEDIN_DESCRIPTION_SELECTORS = [
-	"div.description__text--rich div.show-more-less-html__markup",
-];
-
-/** LinkedIn "See more" button selector */
-export const LINKEDIN_SEE_MORE_SELECTOR = ".show-more-less-html__button";
 
 // =============================================================================
 // HTTP STATUS CODES

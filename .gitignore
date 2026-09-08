@@ -1,48 +1,99 @@
-# Dependencies and build output
+# Dependencies and generated build output
 node_modules/
 dist/
 coverage/
 .nyc_output/
 *.tsbuildinfo
+*.lcov
 
-# Runtime state and generated content
-data/
-logs/
-materials/
-materials-deployed/
-chrome/
-*.log
-*.pid
-*.tmp
-*.cache
-temp-*/
-
-# User-specific application data. Commit only documentation and examples.
-user_data/*
-!user_data/README.md
-!user_data/*.example
-
-# Local credentials and environment overrides
+# Environment files and credentials
 .env
 .env.*
 !.env.example
+*.env
+!*.env.example
+.envrc
+.direnv/
+.npmrc
+.secrets/
+secrets/
+credentials*.json
 *.pem
 *.key
 *.p12
 *.pfx
-credentials.json
-secrets.json
+*.jks
 
-# Archives and local package artifacts
+# AstroEX private profile and runtime state
+profile/
+data/
+logs/
+materials/
+materials-deployed/
+*.sqlite
+*.sqlite-*
+*.db
+*.db-*
+*_payload_*.json
+debug_scrape_output.json
+
+# Local deployment and scratch automation
+deployMaterials.gs
+testie*.bash
+testicle.bash
+twoTesties.bash
+
+# Package archives, reports, and temporary files
 *.tgz
 *.tar.gz
-*.zip
+pack.json
+*.tmp
+*.temp
+*.bak
+*.orig
+*.rej
+*~
+tmp/
+temp/
+*.pid
+*.pid.lock
+.node_repl_history
+astroex_ss*.png
+IMPROVEMENTS_SUMMARY.md
+REFACTORING_REPORT.md
+STATISTICS_FRAMEWORK_*.md
+codebase_analysis_report.md
+implementation_plan.md
+statistics_framework_design.md
+statistics_framework_summary.md
 
-# Editor and operating-system metadata
-.DS_Store
-Thumbs.db
-.idea/
+# Tool caches
+.cache/
+.parcel-cache/
+.turbo/
+.eslintcache
+.stylelintcache
+.biomecache
+.npm/
+.pnpm-store/
+.yarn/cache/
+.yarn/unplugged/
+
+# Editors and operating systems
 .vscode/
+.idea/
+.fleet/
+.history/
+*.code-workspace
 *.swp
 *.swo
-*~
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Diagnostic logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*

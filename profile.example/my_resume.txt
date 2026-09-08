@@ -1,0 +1,11 @@
+CANDIDATE NAME
+candidate@example.com | Example City, ST
+
+PROFESSIONAL SUMMARY
+Replace this file with the candidate's complete resume before running an LLM stage.
+
+EXPERIENCE
+Example role and evidence-based accomplishments.
+
+EDUCATION AND CERTIFICATIONS
+Example education and certifications.

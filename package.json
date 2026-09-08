@@ -1,34 +1,52 @@
 {
 	"name": "astroex",
-	"version": "5.0.0",
-	"description": "Job acquisition, filtering, evaluation, and materials-generation pipeline with standalone LinkedIn and Indeed acquisition providers",
+	"version": "0.13.0",
+	"description": "Indeed job acquisition, filtering, evaluation, and materials-generation pipeline",
 	"type": "commonjs",
-	"main": "src/index.ts",
+	"main": "dist/index.js",
+	"bin": {
+		"astroex": "dist/index.js"
+	},
+	"files": [
+		"dist",
+		"config",
+		"docs",
+		"profile.example",
+		"prompts",
+		"sysprompts",
+		".env.example",
+		"README.md",
+		"LICENSE.md"
+	],
 	"scripts": {
-		"build": "tsc",
+		"build": "rimraf dist && tsc",
+		"prepack": "npm run build",
+		"typecheck": "tsc --noEmit",
 		"start": "ts-node src/index.ts",
 		"start:debug": "ts-node src/index.ts --headless false",
 		"clean:data": "rimraf ./data",
-		"scrape:search": "ts-node src/index.ts scrape-search",
-		"scrape:job": "ts-node src/index.ts scrape-job",
-		"scrape:jobs": "ts-node src/index.ts scrape-jobs",
 		"acquire:jobs": "ts-node src/index.ts acquire-jobs",
 		"process": "ts-node src/index.ts processData",
 		"job:cloth": "ts-node src/index.ts jobCloth",
 		"job:judge": "ts-node src/index.ts jobJudge",
 		"makeMaterials": "ts-node src/index.ts makeMaterials",
-		"modes:er44zz": "ts-node src/index.ts --help",
+		"pipeline": "ts-node src/index.ts run-pipeline",
+		"test": "npm run build && node --test test/*.test.js",
+		"check": "npm run typecheck && npm test",
+		"audit": "npm audit",
 		"test:file-discovery": "npm run build && node --test test/jobJudgeFileDiscovery.test.js",
-		"test:jobdb-flow": "npm run build && node --test test/jobJudgeFileDiscovery.test.js test/scrapeSearchJobDB.test.js",
+		"test:jobdb-flow": "npm run build && node --test test/jobRepository.test.js test/jobJudgeFileDiscovery.test.js",
 		"test:statistics": "npm run build && node --test test/statisticsCollector.test.js",
 		"test:acquisition": "npm run build && node --test test/acquisition.test.js",
 		"test:logging": "npm run build && node --test test/logging.test.js",
-		"lint": "rm -rf dist && biome check .",
-		"lint:fix": "rm -rf dist && biome check --fix .",
-		"format": "rm -rf dist && biome format --write .",
-		"format:check": "rm -rf dist && biome format ."
+		"test:jobcloth-payload": "npm run build && node --test test/jobClothPayload.test.js",
+		"test:remote-only": "npm run build && node --test test/remoteOnly.test.js",
+		"lint": "rimraf dist && biome check .",
+		"lint:fix": "rimraf dist && biome check --fix .",
+		"format": "rimraf dist && biome format --write .",
+		"format:check": "rimraf dist && biome format ."
 	},
-	"author": "tjenkel",
+	"author": "AstroEX Contributors",
 	"contributors": [
 		{
 			"name": "llpujol",
@@ -37,18 +55,12 @@
 	],
 	"license": "MIT",
 	"dependencies": {
-		"@types/puppeteer": "^2.0.1",
-		"@types/yargs": "^15.0.9",
 		"axios": "^1.19.0",
 		"axios-retry": "^4.5.0",
 		"chalk": "^4.1.0",
 		"cheerio": "^1.2.0",
 		"https-proxy-agent": "^7.0.6",
 		"openai": "^5.0.0-beta.0",
-		"prettier": "^3.6.2",
-		"puppeteer": "^22.8.2",
-		"rimraf": "^5.0.1",
-		"rxjs": "^6.5.5",
 		"socks-proxy-agent": "^8.0.5",
 		"tiktoken": "^1.0.21",
 		"turndown": "^7.2.4",
@@ -59,10 +71,15 @@
 		"yargs": "^17.7.3"
 	},
 	"engines": {
-		"node": ">=20.0.0"
+		"node": ">=22.13.0"
 	},
 	"devDependencies": {
 		"@biomejs/biome": "^1.9.4",
+		"@types/node": "^24.7.0",
+		"@types/turndown": "^5.0.6",
+		"@types/yargs": "^15.0.9",
+		"prettier": "^3.6.2",
+		"rimraf": "^5.0.1",
 		"ts-node": "^10.9.2",
 		"typescript": "^5.8.3"
 	}
