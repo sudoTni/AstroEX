@@ -6,6 +6,8 @@ AstroEX is a Node.js/TypeScript command-line pipeline for acquiring Indeed jobs,
 
 The active product scope is Indeed only. LinkedIn acquisition and browser-scraping workflows have been retired.
 
+**Disclaimer:** AstroEX automates the acquisition and processing of job-listing data associated with Indeed. Use of automated tools to access, query, crawl, scrape, collect, store, or otherwise process Indeed content may be restricted or prohibited by Indeed’s Terms of Service, Site Rules, robots.txt directives, API/developer agreements, documentation, rate limits, or other applicable policies unless the activity is expressly authorized by Indeed. Users are solely responsible for determining whether their particular configuration and use of AstroEX—including any scraper, automated acquisition mechanism, API integration, or third-party data-acquisition component—complies with the then-current terms, permissions, and applicable law. Unauthorized automated access may result in blocked requests, suspension or termination of accounts or API credentials, or other remedies available to Indeed. This project does not grant, imply, or represent permission from Indeed, is not affiliated with or endorsed by Indeed, and should not be construed as legal advice. Before using AstroEX with Indeed, users should review the current governing terms and obtain any required authorization or independent legal advice as appropriate.
+
 ## Pipeline at a glance
 
 | Stage        | Command         | Reads                                                        | Writes                                             |
