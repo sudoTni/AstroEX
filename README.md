@@ -1,6 +1,5 @@
 # AstroEX
 
-[![CI](https://github.com/sudoTni/AstroEX/actions/workflows/ci.yml/badge.svg)](https://github.com/sudoTni/AstroEX/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE.md)
 [![Node.js Version](https://img.shields.io/badge/node-%3E%3D22.13.0-brightgreen)](https://nodejs.org/)
 
