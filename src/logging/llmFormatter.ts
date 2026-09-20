@@ -19,6 +19,11 @@ export interface LLMRequestLogData {
 	maxTokens?: number;
 	timeout?: number;
 	reasoning_effort?: string;
+	providerRouting?: {
+		only?: string[];
+		ignore?: string[];
+		quantizations?: string[];
+	};
 	messages?: Array<{ role: string; content: string }>;
 	responseSchema?: unknown;
 	tools?: unknown[];
@@ -194,6 +199,19 @@ export function formatLLMRequest(
 	if (data.timeout !== undefined) params.push(`timeout=${data.timeout}ms`);
 	if (data.reasoning_effort !== undefined && data.reasoning_effort !== "")
 		params.push(`reasoning_effort=${data.reasoning_effort}`);
+	if (data.provider === "openrouter" && data.providerRouting) {
+		if (data.providerRouting.only?.length) {
+			params.push(`provider.only=${data.providerRouting.only.join(",")}`);
+		}
+		if (data.providerRouting.ignore?.length) {
+			params.push(`provider.ignore=${data.providerRouting.ignore.join(",")}`);
+		}
+		if (data.providerRouting.quantizations?.length) {
+			params.push(
+				`provider.quantizations=${data.providerRouting.quantizations.join(",")}`,
+			);
+		}
+	}
 
 	lines.push(`${border("│")} Parameters: ${params.join(", ") || "default"}`);
 

@@ -1,21 +1,11 @@
 {
 	"jobCloth": {
-		"jc_hy3": {
-			"name": "jc_hy3",
+		"jc_ds-v4-f-0423": {
+			"name": "jc_ds-v4-f-0423",
 			"provider": "openrouter",
 			"base_url": "https://openrouter.ai/api/v1",
-			"modelId": "tencent/hy3",
-			"promptTemplate": "./prompts/jc_prompt.txt",
-			"temperature": 0.9,
-			"topP": 1.0,
-			"maxTokens": 64000
-		},
-		"jc_ds-v4-f-0731": {
-			"name": "jc_ds-v4-f-0731",
-			"provider": "openrouter",
-			"base_url": "https://openrouter.ai/api/v1",
-			"modelId": "deepseek/deepseek-v4-flash-0731",
-			"promptTemplate": "./prompts/jc_prompt.txt",
+			"modelId": "deepseek/deepseek-v4-flash",
+			"promptTemplate": "./prompts/jc_prompt-mini.txt",
 			"temperature": 1.0,
 			"topP": 0.95,
 			"maxTokens": 64000
@@ -25,139 +15,41 @@
 			"provider": "openrouter",
 			"base_url": "https://openrouter.ai/api/v1",
 			"modelId": "z-ai/glm-5.3-flash",
-			"promptTemplate": "./prompts/jc_prompt.txt",
+			"promptTemplate": "./prompts/jc_prompt-mini.txt",
+			"temperature": 1.0,
+			"topP": 0.95,
+			"maxTokens": 64000
+		}
+	},
+	"remoteEval": {
+		"re_ds-v4-f-0423": {
+			"name": "re_ds-v4-f-0423",
+			"provider": "openrouter",
+			"base_url": "https://openrouter.ai/api/v1",
+			"modelId": "deepseek/deepseek-v4-flash",
+			"promptTemplate": "./prompts/re_prompt01-mini.txt",
 			"temperature": 1.0,
 			"topP": 0.95,
 			"maxTokens": 64000
 		},
-		"jc_g5.6-luna_or": {
-			"name": "jc_g5.6-luna_or",
+		"re_glm-5.3-flash": {
+			"name": "re_glm-5.3-flash",
 			"provider": "openrouter",
 			"base_url": "https://openrouter.ai/api/v1",
-			"modelId": "openai/gpt-5.6-luna",
-			"promptTemplate": "./prompts/jc_prompt.txt",
+			"modelId": "z-ai/glm-5.3-flash",
+			"promptTemplate": "./prompts/re_prompt01-mini.txt",
 			"temperature": 1.0,
-			"topP": 1.0,
+			"topP": 0.95,
 			"maxTokens": 64000
-		},
-		"jc_mm-m2_poe": {
-			"name": "jc_mm-m2_poe",
-			"provider": "poe",
-			"base_url": "https://api.poe.com/v1",
-			"modelId": "Minimax-M2",
-			"promptTemplate": "./prompts/jc_prompt.txt",
-			"temperature": 1.0,
-			"topP": 0.95,
-			"maxTokens": 16000
-		},
-		"jc_gf25_poe": {
-			"name": "jc_gf25_poe",
-			"provider": "poe",
-			"base_url": "https://api.poe.com/v1",
-			"modelId": "Gemini-2.5-Flash",
-			"promptTemplate": "./prompts/jc_prompt.txt",
-			"temperature": 0.7,
-			"topP": 0.95,
-			"maxTokens": 16000
-		},
-		"jc_g5_poe": {
-			"name": "jc_g5_poe",
-			"provider": "poe",
-			"base_url": "https://api.poe.com/v1",
-			"modelId": "GPT-5",
-			"promptTemplate": "./prompts/jc_prompt.txt",
-			"temperature": 1.0,
-			"topP": 1.0,
-			"maxTokens": 16000
-		},
-		"jc_g5m_poe": {
-			"name": "jc_g5m_poe",
-			"provider": "poe",
-			"base_url": "https://api.poe.com/v1",
-			"modelId": "GPT-5-mini",
-			"promptTemplate": "./prompts/jc_prompt.txt",
-			"temperature": 1.0,
-			"topP": 1.0,
-			"maxTokens": 16000
-		},
-		"jc_g5c_poe": {
-			"name": "jc_g5c_poe",
-			"provider": "poe",
-			"base_url": "https://api.poe.com/v1",
-			"modelId": "GPT-5-Chat",
-			"promptTemplate": "./prompts/jc_prompt.txt",
-			"temperature": 0.2,
-			"topP": 0.6,
-			"maxTokens": 16000
-		},
-		"jc_g5n_poe": {
-			"name": "jc_g5n_poe",
-			"provider": "poe",
-			"base_url": "https://api.poe.com/v1",
-			"modelId": "GPT-5-nano",
-			"promptTemplate": "./prompts/jc_prompt.txt",
-			"temperature": 0.6,
-			"topP": 1.0,
-			"maxTokens": 10000
-		},
-		"jc_oai-gpt-oss-120b": {
-			"name": "jc_oai-gpt-oss-120b",
-			"provider": "poe",
-			"base_url": "https://api.poe.com/v1",
-			"modelId": "GPT-OSS-120B",
-			"promptTemplate": "./prompts/jc_prompt.txt",
-			"temperature": 1.0,
-			"topP": 1.0,
-			"maxTokens": 16000
-		},
-		"jc_ds-v3.2-exp": {
-			"name": "jc_ds-v3.2-exp",
-			"provider": "poe",
-			"base_url": "https://api.poe.com/v1",
-			"modelId": "DeepSeek-V3.2-Exp",
-			"promptTemplate": "./prompts/jc_prompt.txt",
-			"temperature": 0.6,
-			"topP": 0.95,
-			"maxTokens": 16000
-		},
-		"jc_qwen-3-235b-a22b-instruct-2507": {
-			"name": "jc_qwen-3-235b-a22b-instruct-2507",
-			"provider": "poe",
-			"base_url": "https://api.poe.com/v1",
-			"modelId": "Qwen-3-235B-2507-T",
-			"promptTemplate": "./prompts/jc_prompt.txt",
-			"temperature": 0.7,
-			"topP": 0.8,
-			"maxTokens": 16000
-		},
-		"jc_mai-ds-r1": {
-			"name": "jc_mai-ds-r1",
-			"provider": "openrouter",
-			"base_url": "https://openrouter.ai/api/v1",
-			"modelId": "microsoft/mai-ds-r1:free",
-			"promptTemplate": "./prompts/jc_prompt.txt",
-			"temperature": 0.6,
-			"topP": 0.95,
-			"maxTokens": 8000
 		}
 	},
 	"jobJudge": {
-		"jep_hy3": {
-			"name": "jep_hy3",
+		"jep_ds-v4-f-0423": {
+			"name": "jep_ds-v4-f-0423",
 			"provider": "openrouter",
 			"base_url": "https://openrouter.ai/api/v1",
-			"modelId": "tencent/hy3",
-			"promptTemplate": "./prompts/jep_prompt03.txt",
-			"temperature": 0.9,
-			"topP": 1.0,
-			"maxTokens": 64000
-		},
-		"jep_ds-v4-f-0731": {
-			"name": "jep_ds-v4-f-0731",
-			"provider": "openrouter",
-			"base_url": "https://openrouter.ai/api/v1",
-			"modelId": "deepseek/deepseek-v4-flash-0731",
-			"promptTemplate": "./prompts/jep_prompt05.txt",
+			"modelId": "deepseek/deepseek-v4-flash",
+			"promptTemplate": "./prompts/jep_prompt05-re-mini.txt",
 			"temperature": 1.0,
 			"topP": 0.95,
 			"maxTokens": 64000
@@ -167,110 +59,10 @@
 			"provider": "openrouter",
 			"base_url": "https://openrouter.ai/api/v1",
 			"modelId": "z-ai/glm-5.3-flash",
-			"promptTemplate": "./prompts/jep_prompt05.txt",
+			"promptTemplate": "./prompts/jep_prompt05-re-mini.txt",
 			"temperature": 1.0,
 			"topP": 0.95,
 			"maxTokens": 64000
-		},
-		"jep_g5.6-luna_or": {
-			"name": "jep_g5.6-luna_or",
-			"provider": "openrouter",
-			"base_url": "https://openrouter.ai/api/v1",
-			"modelId": "openai/gpt-5.6-luna",
-			"promptTemplate": "./prompts/jep_prompt05.txt",
-			"temperature": 1.0,
-			"topP": 1.0,
-			"maxTokens": 64000
-		},
-		"jep_glm-4.6_poe": {
-			"name": "jep_glm-4.6_poe",
-			"provider": "poe",
-			"base_url": "https://api.poe.com/v1",
-			"modelId": "GLM-4.6",
-			"promptTemplate": "./prompts/jep_prompt03.txt",
-			"temperature": 1.0,
-			"topP": 0.95,
-			"maxTokens": 16000
-		},
-		"jep_gf25_poe": {
-			"name": "jep_gf25_poe",
-			"provider": "poe",
-			"base_url": "https://api.poe.com/v1",
-			"modelId": "Gemini-2.5-Flash",
-			"promptTemplate": "./prompts/jep_gf25_poe.txt",
-			"temperature": 0.7,
-			"topP": 0.95,
-			"maxTokens": 16000
-		},
-		"jep_qwen-3-235b-a22b-instruct-2507": {
-			"name": "jep_qwen-3-235b-a22b-instruct-2507",
-			"provider": "poe",
-			"base_url": "https://api.poe.com/v1",
-			"modelId": "Qwen3-235B-2507-FW",
-			"promptTemplate": "./prompts/jep_q3-235b-a22b.txt",
-			"temperature": 0.7,
-			"topP": 0.8,
-			"maxTokens": 16000
-		},
-		"jep_g5m_poe": {
-			"name": "jep_g5m_poe",
-			"provider": "poe",
-			"base_url": "https://api.poe.com/v1",
-			"modelId": "GPT-5-mini",
-			"promptTemplate": "./prompts/jep_g5m_poe.txt",
-			"temperature": 1.0,
-			"topP": 1.0,
-			"maxTokens": 16000
-		},
-		"jep_g5_poe": {
-			"name": "jep_g5_poe",
-			"provider": "poe",
-			"base_url": "https://api.poe.com/v1",
-			"modelId": "GPT-5",
-			"promptTemplate": "./prompts/jep_prompt02.txt",
-			"temperature": 1.0,
-			"topP": 1.0,
-			"maxTokens": 16000
-		},
-		"jep_oai-gpt-oss-120b": {
-			"name": "jep_oai-gpt-oss-120b",
-			"provider": "poe",
-			"base_url": "https://api.poe.com/v1",
-			"modelId": "gpt-oss-120b",
-			"promptTemplate": "./prompts/jep_prompt03.txt",
-			"temperature": 1.0,
-			"topP": 1.0,
-			"maxTokens": 32000
-		},
-		"jep_ds-v3-0324": {
-			"name": "jep_ds-v3-0324",
-			"provider": "openrouter",
-			"base_url": "https://openrouter.ai/api/v1",
-			"modelId": "deepseek/deepseek-chat-v3-0324:free",
-			"promptTemplate": "./prompts/jep_ds-v3-0324.txt",
-			"temperature": 0.6,
-			"topP": 0.95,
-			"maxTokens": 10000
-		},
-		"jep_gas-gf2.0t": {
-			"name": "jep_gas-gf2.0t",
-			"provider": "gemini",
-			"base_url": "https://generativelanguage.googleapis.com/v1beta/openai",
-			"modelId": "gemini-2.0-flash-thinking-exp-01-21",
-			"promptTemplate": "./prompts/jep_gas-gf2.0t.txt",
-			"temperature": 0.45,
-			"topP": 0.95,
-			"maxTokens": 10000
-		},
-		"jep_mai-ds-r1": {
-			"name": "jep_mai-ds-r1",
-			"provider": "openrouter",
-			"base_url": "https://openrouter.ai/api/v1",
-			"modelId": "microsoft/mai-ds-r1:free",
-			"promptTemplate": "./prompts/jep_mai-ds-r1.txt",
-			"temperature": 0.6,
-			"topP": 0.95,
-			"maxTokens": 10000
 		}
 	},
 	"makeMaterials": {
@@ -279,100 +71,20 @@
 			"provider": "openrouter",
 			"base_url": "https://openrouter.ai/api/v1",
 			"modelId": "openai/gpt-5.6-luna",
-			"promptTemplate": "./prompts/rop_prompt01.txt",
+			"promptTemplate": "./prompts/rop_prompt01-mini.txt",
 			"temperature": 1.0,
 			"topP": 1.0,
 			"maxTokens": 64000
 		},
-		"rop_hy3": {
-			"name": "rop_hy3",
+		"rop_glm-5.3-flash": {
+			"name": "rop_glm-5.3-flash",
 			"provider": "openrouter",
 			"base_url": "https://openrouter.ai/api/v1",
-			"modelId": "tencent/hy3",
-			"promptTemplate": "./prompts/rop_prompt01.txt",
-			"temperature": 0.9,
-			"topP": 1.0,
-			"maxTokens": 64000
-		},
-		"rop_ds-v4-p-0731": {
-			"name": "rop_ds-v4-p-0731",
-			"provider": "openrouter",
-			"base_url": "https://openrouter.ai/api/v1",
-			"modelId": "deepseek/deepseek-v4-pro",
-			"promptTemplate": "./prompts/rop-ds-v4-f-0731.txt",
+			"modelId": "z-ai/glm-5.3-flash",
+			"promptTemplate": "./prompts/rop_prompt01-mini.txt",
 			"temperature": 1.0,
 			"topP": 0.95,
 			"maxTokens": 64000
-		},
-		"rop_ds-v4-f-0731": {
-			"name": "rop_ds-v4-f-0731",
-			"provider": "openrouter",
-			"base_url": "https://openrouter.ai/api/v1",
-			"modelId": "deepseek/deepseek-v4-flash-0731",
-			"promptTemplate": "./prompts/rop-ds-v4-f-0731.txt",
-			"temperature": 1.0,
-			"topP": 0.95,
-			"maxTokens": 64000
-		},
-		"rop_g5m_poe": {
-			"name": "rop_g5m_poe",
-			"provider": "poe",
-			"base_url": "https://api.poe.com/v1",
-			"modelId": "GPT-5-mini",
-			"promptTemplate": "./prompts/rop_g5m_poe.txt",
-			"temperature": 1.0,
-			"topP": 1.0,
-			"maxTokens": 10000
-		},
-		"rop_g5_poe": {
-			"name": "rop_g5_poe",
-			"provider": "poe",
-			"base_url": "https://api.poe.com/v1",
-			"modelId": "GPT-5",
-			"promptTemplate": "./prompts/rop_prompt01.txt",
-			"temperature": 1.0,
-			"topP": 1.0,
-			"maxTokens": 16000
-		},
-		"rop_z-glma": {
-			"name": "rop_z-glma",
-			"provider": "openrouter",
-			"base_url": "https://openrouter.ai/api/v1",
-			"modelId": "z-ai/glm-4.5-air:free",
-			"promptTemplate": "./prompts/rop_z-glma.txt",
-			"temperature": 1.0,
-			"topP": 1.0,
-			"maxTokens": 12000
-		},
-		"rop_a-cs4": {
-			"name": "rop_a-cs4",
-			"provider": "openrouter",
-			"base_url": "https://openrouter.ai/api/v1",
-			"modelId": "anthropic/claude-sonnet-4",
-			"promptTemplate": "./prompts/rop_a-cs4.txt",
-			"temperature": 1.0,
-			"topP": 1.0,
-			"maxTokens": 12000
-		},
-		"rop_ds-v3-0324": {
-			"name": "rop_ds-v3-0324",
-			"provider": "openrouter",
-			"base_url": "https://openrouter.ai/api/v1",
-			"modelId": "deepseek/deepseek-chat-v3-0324:free",
-			"promptTemplate": "./prompts/rop_ds-v3-0324.txt",
-			"temperature": 1.0,
-			"topP": 1.0,
-			"maxTokens": 10000
-		},
-		"rop_m-l_01": {
-			"name": "rop_m-l_01",
-			"provider": "mistral",
-			"base_url": "https://api.mistral.ai/v1",
-			"modelId": "mistral-large-latest",
-			"promptTemplate": "./prompts/rop_m-l_01.txt",
-			"temperature": 1.0,
-			"topP": 1.0,
-			"maxTokens": 10000
 		}
 	}
 }

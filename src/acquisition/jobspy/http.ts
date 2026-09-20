@@ -1,7 +1,7 @@
 /**
- * Vendored and adapted from ts-jobspy-main/src/util.ts (MIT).
- * Only the HTTP, proxy, retry, and text-conversion primitives required by the
- * supported Indeed provider is retained here.
+ * Adapted from ts-jobspy (Copyright 2025-2026 Alpha Romer Coma) and
+ * JobSpy (Copyright 2023 Cullen Watson, Zachary Hampton), licensed under MIT.
+ * See THIRD_PARTY_NOTICES.md for complete license texts.
  */
 import axios, {
 	type AxiosInstance,

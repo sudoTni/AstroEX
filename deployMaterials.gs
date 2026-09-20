@@ -1,10 +1,5 @@
 /**
  * Job-material deployment automation (OpenRouter Edition).
- * 
- * This Google Apps Script reads AstroEX output artifacts from the specified Google Drive folder,
- * requesting that an LLM find a suitable destination email address, send the cover letter as the email
- * body with the resume attached if it finds one, transforms the AstroEX output artifacts into pre-made
- * Google Docs templates, and maintains a Google Sheet of progress. It's rad.
  *
  * Revised pipeline:
  * 1. Read structured markdown material files from SOURCE_FOLDER_ID.
@@ -13,15 +8,16 @@
  * 4. Discover ranked, evidence-backed application routes AND fetch company HQ address via OpenRouter.
  * 5. Generate tailored resume and cover-letter Google Docs from templates using custom filenames if specified.
  * 6. Generate a third custom output Google Doc containing the LinkedIn posting URL.
- * 7. Create Gmail drafts (or auto-send) for ALL defensible routing addresses (comma-separated).
- * 8. Extract the final, fully-templated text from the Cover Letter Doc for the email body.
- * 9. Attach the generated resume PDF to the email.
- * 10. Log the dispatch event to a centralized Google Sheet (comma-separated statuses).
- * 11. Dual-Log execution events to the Apps Script console AND a per-run Google Doc log file.
- * 12. Annotate generated Drive files (including the LinkedIn file) with discovery evidence and candidate scoring.
- * 13. Move the source material file to PROCESSED_FOLDER_ID only when successful.
- * 14. Auto-spawn a continuation trigger if approaching the 5-minute execution limit.
- * 15. Auto-scan inbox for bounce-backs and surgically update granular spreadsheet statuses.
+ * 7. Render tailored resume PDF, cover letter PDF, and LinkedIn .desktop shortcut into a dedicated package subfolder within TARGET_FOLDER_ID_RENDER.
+ * 8. Create Gmail drafts (or auto-send) for ALL defensible routing addresses (comma-separated).
+ * 9. Extract the final, fully-templated text from the Cover Letter Doc for the email body.
+ * 10. Attach the generated resume PDF to the email.
+ * 11. Log the dispatch event to a centralized Google Sheet (comma-separated statuses).
+ * 12. Dual-Log execution events to the Apps Script console AND a per-run Google Doc log file.
+ * 13. Annotate generated Drive files (including rendered files and the LinkedIn file) with discovery evidence and candidate scoring.
+ * 14. Move the source material file to PROCESSED_FOLDER_ID only when successful.
+ * 15. Gracefully halt file processing if approaching the 5-minute execution limit.
+ * 16. Auto-scan inbox for bounce-backs and surgically update granular spreadsheet statuses.
  */
 
 // ============================================================================
@@ -36,14 +32,20 @@ const AUTO_SEND_EMAILS = true;
 const ENABLE_EMAIL_DISPATCH = true;
 
 // Centralized logging configuration
+const LOG_LEVELS = Object.freeze({
+  DEBUG: 1,
+  INFO: 2,
+  WARN: 3,
+  ERROR: 4
+});
+const CURRENT_LOG_LEVEL = LOG_LEVELS.INFO; // Default to INFO in production (options: DEBUG, INFO, WARN, ERROR)
 const ENABLE_SPREADSHEET_LOGGING = true;
 const ENABLE_DOC_LOGGING = true;
-const DOC_LOG_FOLDER_ID = 'REDACTED_RESOURCE_ID';
+const DEFAULT_DOC_LOG_FOLDER_ID = 'YOUR_GOOGLE_DRIVE_FOLDER_ID'; // Replace with your Google Drive Folder ID
+const DOC_LOG_FOLDER_ID = DEFAULT_DOC_LOG_FOLDER_ID; // Backward-compatibility alias
 const DOC_LOG_FILE_NAME_PREFIX = 'AstroEX-RunLog';
 const DOC_LOG_FILE_TS_FORMAT = 'yyyyMMdd-HHmmss-SSS';
-const CONTINUATION_TRIGGER_DELAY_MS = 1000 * 60;
-const CONTINUATION_TRIGGER_GUARD_PROP = 'DEPLOY_CONTINUATION_TRIGGER_AT';
-const CONTINUATION_TRIGGER_GUARD_WINDOW_MS = 10 * 60 * 1000;
+const ARCHIVE_UNRESOLVED_FILES = true; // Move unresolvable files to processed folder to prevent infinite retry loops
 
 // ============================================================================
 
@@ -54,13 +56,15 @@ const CONTINUATION_TRIGGER_GUARD_WINDOW_MS = 10 * 60 * 1000;
 const SCRIPT_PROPERTIES = Object.freeze({
   SOURCE_FOLDER_ID: 'SOURCE_FOLDER_ID',
   TARGET_FOLDER_ID: 'TARGET_FOLDER_ID',
+  TARGET_FOLDER_ID_RENDER: 'TARGET_FOLDER_ID_RENDER',
   PROCESSED_FOLDER_ID: 'PROCESSED_FOLDER_ID',
   RESUME_TEMPLATE_ID: 'RESUME_TEMPLATE_ID',
   COVER_LETTER_TEMPLATE_ID: 'COVER_LETTER_TEMPLATE_ID',
   OR_API_KEY: 'OR_API_KEY', // REPLACED: POE_API_KEY -> OR_API_KEY
   SPREADSHEET_LOG_ID: 'SPREADSHEET_LOG_ID',
   APPLICANT_NAME: 'APPLICANT_NAME',
-  APPLICANT_EMAIL: 'APPLICANT_EMAIL'
+  APPLICANT_EMAIL: 'APPLICANT_EMAIL',
+  DOC_LOG_FOLDER_ID: 'DOC_LOG_FOLDER_ID'
 });
 
 /**
@@ -161,35 +165,117 @@ let CACHED_EFFECTIVE_USER_EMAIL = null;
 let CACHED_BOUNCED_ADDRESS_SET = null;
 
 // ============================================================================
-// 📝 CUSTOM DUAL-LOGGING SYSTEM
+// 📝 STANDARDIZED DUAL-LOGGING SYSTEM & EXECUTION METRICS
 // ============================================================================
+
+const RUN_METRICS = {
+  runId: Utilities.getUuid(),
+  startTime: Date.now(),
+  filesDiscovered: 0,
+  filesProcessed: 0,
+  filesSkipped: 0,
+  emailsSent: 0,
+  emailsDrafted: 0,
+  routesUnresolved: 0,
+  errorsEncountered: 0,
+  bouncesDetected: 0,
+  timeLimitReached: false
+};
 
 const SCRIPT_LOG_BUFFER =[];
 const DOC_LOG_RUN_MARKER_PREFIX = '[DOC_RUN_START]';
 const DOC_LOG_CURRENT_RUN_TIMESTAMP = Utilities.formatDate(new Date(), Session.getScriptTimeZone() || 'America/New_York', DOC_LOG_FILE_TS_FORMAT);
-const DOC_LOG_CURRENT_RUN_ID = Utilities.getUuid();
+const DOC_LOG_CURRENT_RUN_ID = RUN_METRICS.runId;
 const DOC_LOG_CURRENT_RUN_MARKER = `${DOC_LOG_RUN_MARKER_PREFIX} ${DOC_LOG_CURRENT_RUN_TIMESTAMP} | ${DOC_LOG_CURRENT_RUN_ID}`;
 let DOC_LOG_RUN_MARKER_WRITTEN = false;
 let DOC_LOG_CURRENT_RUN_DOC_ID = '';
 let DOC_LOG_CURRENT_RUN_DOC_NAME = '';
 
 /**
- * Verbose Logger: Writes to console and pushes to Doc buffer.
+ * Standardized Logger for console and Google Doc targets.
+ */
+const AppLogger = {
+  formatLine(level, component, message, context) {
+    const ts = Utilities.formatDate(new Date(), Session.getScriptTimeZone() || 'America/New_York', 'yyyy-MM-dd HH:mm:ss.SSS');
+    const paddedLevel = String(level).padEnd(5, ' ');
+    const compStr = component ? `[${String(component).trim()}]`.padEnd(12, ' ') : '';
+    let line = `[${ts}] [${paddedLevel}] ${compStr} ${message}`;
+    if (context && typeof context === 'object' && Object.keys(context).length > 0) {
+      const ctxStr = Object.entries(context)
+        .map(([k, v]) => `${k}=${typeof v === 'string' ? `"${v}"` : JSON.stringify(v)}`)
+        .join(' ');
+      line += ` | ${ctxStr}`;
+    }
+    return line;
+  },
+
+  log(levelName, component, message, context) {
+    const levelVal = LOG_LEVELS[levelName] || LOG_LEVELS.INFO;
+    if (levelVal < CURRENT_LOG_LEVEL) return;
+    const formatted = this.formatLine(levelName, component, message, context);
+    Logger.log(formatted);
+    if (ENABLE_DOC_LOGGING) {
+      SCRIPT_LOG_BUFFER.push({ level: levelName, component, message, text: formatted });
+    }
+  },
+
+  debug(comp, msg, ctx) { this.log('DEBUG', comp, msg, ctx); },
+  info(comp, msg, ctx)  { this.log('INFO', comp, msg, ctx); },
+  warn(comp, msg, ctx)  { this.log('WARN', comp, msg, ctx); },
+  error(comp, msg, ctx) {
+    RUN_METRICS.errorsEncountered++;
+    this.log('ERROR', comp, msg, ctx);
+  },
+
+  vLog(message) {
+    const raw = String(message || '').trim();
+    // Normalize and extract component tag if message is bracketed e.g. [ORCHESTRATOR]
+    const match = raw.match(/^(?:[-*•\s]*)(?:\[([A-Za-z0-9_\-\s]+)\])?\s*(.*)$/);
+    let tag = match && match[1] ? match[1].trim() : 'GENERAL';
+    let rest = match && match[2] ? match[2].trim() : raw;
+
+    let level = 'INFO';
+    if (/\b(?:warning|warn)\b/i.test(tag) || /\b(?:warning|warn)\b/i.test(rest) || /⚠️/.test(raw)) {
+      level = 'WARN';
+    } else if (/\b(?:error|fatal|fail)\b/i.test(tag) || /\b(?:error|fatal|fail)\b/i.test(rest) || /❌/.test(raw)) {
+      level = 'ERROR';
+    } else if (/\b(?:lazy|debug|detail)\b/i.test(tag) || /Parsing Message|Evaluating Thread/i.test(rest)) {
+      level = 'DEBUG';
+    }
+
+    // Map common subsystem tags to canonical abbreviations
+    tag = tag.replace(/ORCHESTRATOR|CORE/i, 'ORCHESTR')
+             .replace(/EMAIL ENGINE|DISPATCH/i, 'DISPATCH')
+             .replace(/BOUNCE TRACKER|BOUNCE SUPPRESSION|BOUNCES/i, 'BOUNCES')
+             .replace(/LLM GATEWAY|API EXECUTION|API SUCCESS|API ERROR|LLM/i, 'LLM')
+             .replace(/RESUME GENERATOR|COVER LETTER GENERATOR|LINKEDIN DOC GENERATOR|TEMPLATE ENGINE|REPLACE ENGINE|LINK ENGINE|ADDRESS FORMATTING|DRIVE|DOCGEN/i, 'DOCGEN')
+             .replace(/RENDER ENGINE|RENDER/i, 'RENDER')
+             .replace(/DISCOVERY MODULE|DISCOVERY|NORMALIZER|PROMPT BUILDER|ROUTING/i, 'ROUTING')
+             .replace(/PRE-FILTER|PREFILTER|AUTH|PREFLIGHT/i, 'PREFLIGHT')
+             .replace(/PARSER/i, 'PARSER')
+             .replace(/SHEET LOG|SPREADSHEET|SHEET/i, 'SHEET');
+
+    // Clean leading bracket remnants from rest of message
+    rest = rest.replace(/^\[(?:WARNING|ERROR|FATAL|SUCCESS|CORE|LAZY)\]\s*/i, '').replace(/^[❌⚠️🚀📥⏳🏁🛑]\s*/, '');
+    this.log(level, tag.substring(0, 10), rest);
+  }
+};
+
+/**
+ * Global backward-compatibility bridge for all existing vLog() call sites.
  */
 function vLog(message) {
-  const timestamp = Utilities.formatDate(new Date(), Session.getScriptTimeZone() || 'America/New_York', 'yyyy-MM-dd HH:mm:ss.SSS');
-  const formattedMessage = `[${timestamp}] ${message}`;
-  Logger.log(formattedMessage);
-  SCRIPT_LOG_BUFFER.push(formattedMessage);
+  AppLogger.vLog(message);
 }
 
-function getOrCreateRunDocLogTarget() {
+function getOrCreateRunDocLogTarget(folderIdOverride) {
   if (DOC_LOG_CURRENT_RUN_DOC_ID) return DOC_LOG_CURRENT_RUN_DOC_ID;
-  if (!DOC_LOG_FOLDER_ID) {
-    throw new Error('DOC_LOG_FOLDER_ID is empty. Configure it in EMAIL DISPATCH & LOGGING CONFIGURATION.');
+  const targetFolderId = folderIdOverride || DOC_LOG_FOLDER_ID;
+  if (!targetFolderId) {
+    throw new Error('DOC_LOG_FOLDER_ID is empty. Configure it in Script Properties or EMAIL DISPATCH & LOGGING CONFIGURATION.');
   }
 
-  const folder = DriveApp.getFolderById(DOC_LOG_FOLDER_ID);
+  const folder = DriveApp.getFolderById(targetFolderId);
   DOC_LOG_CURRENT_RUN_DOC_NAME = `${DOC_LOG_FILE_NAME_PREFIX}-${DOC_LOG_CURRENT_RUN_TIMESTAMP}-${DOC_LOG_CURRENT_RUN_ID}`;
   const doc = DocumentApp.create(DOC_LOG_CURRENT_RUN_DOC_NAME);
   DOC_LOG_CURRENT_RUN_DOC_ID = doc.getId();
@@ -200,27 +286,141 @@ function getOrCreateRunDocLogTarget() {
 }
 
 /**
- * Flushes the accumulated log buffer to the current run's Google Doc.
+ * Flushes the accumulated log buffer to the current run's Google Doc,
+ * applying structured typography (Headings, Monospace, Tables) and safely locks/closes it.
  */
-function flushDocLogs() {
+function flushDocLogs(folderIdOverride) {
   if (!ENABLE_DOC_LOGGING || SCRIPT_LOG_BUFFER.length === 0) return;
   try {
-    const docId = getOrCreateRunDocLogTarget();
+    const docId = getOrCreateRunDocLogTarget(folderIdOverride);
     const doc = DocumentApp.openById(docId);
     const body = doc.getBody();
-    let textToAppend = '';
+
     if (!DOC_LOG_RUN_MARKER_WRITTEN) {
-      textToAppend += `${DOC_LOG_CURRENT_RUN_MARKER}\n`;
+      const firstP = body.getParagraphs()[0];
+      const titleText = `AstroEX Run Log: ${DOC_LOG_CURRENT_RUN_TIMESTAMP}`;
+      if (firstP && firstP.getText() === '') {
+        firstP.editAsText().setText(titleText);
+        if (firstP.setHeading) firstP.setHeading(DocumentApp.ParagraphHeading.HEADING1);
+      } else {
+        const titleP = body.appendParagraph(titleText);
+        if (titleP && titleP.setHeading) titleP.setHeading(DocumentApp.ParagraphHeading.HEADING1);
+      }
+      const subP = body.appendParagraph(`Run ID: ${DOC_LOG_CURRENT_RUN_ID}`);
+      subP.setFontFamily('Courier New').setFontSize(9).setForegroundColor('#666666');
       DOC_LOG_RUN_MARKER_WRITTEN = true;
     }
-    textToAppend += SCRIPT_LOG_BUFFER.join('\n') + '\n';
-    
-    body.appendParagraph(textToAppend);
-    SCRIPT_LOG_BUFFER.length = 0; // Clear buffer after successful write
 
-    Logger.log(`[SUCCESS] Flushed logs to run Google Doc (${docId}) "${DOC_LOG_CURRENT_RUN_DOC_NAME}".`);
+    const itemsToFlush = SCRIPT_LOG_BUFFER.splice(0, SCRIPT_LOG_BUFFER.length);
+
+    for (let i = 0; i < itemsToFlush.length; i++) {
+      const item = itemsToFlush[i];
+
+      // Handle Executive Summary Block with structured Google Doc Table
+      if (typeof item === 'object' && item !== null && item.isSummary) {
+        const summaryHeading = body.appendParagraph('Execution Run Summary');
+        if (summaryHeading && summaryHeading.setHeading) {
+          summaryHeading.setHeading(DocumentApp.ParagraphHeading.HEADING1);
+        }
+        const tableData = [
+          ['Metric', 'Value'],
+          ['Run ID', String(RUN_METRICS.runId)],
+          ['Execution Duration', `${item.elapsedSec} seconds`],
+          ['Time Limit Reached', RUN_METRICS.timeLimitReached ? 'YES (Batch paused at 5-min threshold)' : 'NO (Completed within window)'],
+          ['Files Discovered', String(RUN_METRICS.filesDiscovered)],
+          ['Files Processed', String(RUN_METRICS.filesProcessed)],
+          ['Files Skipped / Archived', String(RUN_METRICS.filesSkipped)],
+          ['Emails Sent', String(RUN_METRICS.emailsSent)],
+          ['Emails Drafted', String(RUN_METRICS.emailsDrafted)],
+          ['Unresolvable Routes', String(RUN_METRICS.routesUnresolved)],
+          ['Errors Encountered', String(RUN_METRICS.errorsEncountered)],
+          ['Bounces Detected', String(RUN_METRICS.bouncesDetected)],
+          ['Suppressed Address Set', `${CACHED_BOUNCED_ADDRESS_SET ? CACHED_BOUNCED_ADDRESS_SET.size : 0} addresses`]
+        ];
+        const table = body.appendTable(tableData);
+        try {
+          const headerRow = table.getRow(0);
+          for (let c = 0; c < 2; c++) {
+            const cell = headerRow.getCell(c);
+            cell.editAsText().setBold(true);
+            cell.setBackgroundColor('#E8EAED');
+          }
+        } catch (tableStyleErr) {}
+        continue;
+      }
+
+      const rawStr = typeof item === 'string' ? item : (item && item.text ? item.text : String(item));
+      const lines = rawStr.split('\n');
+      for (let j = 0; j < lines.length; j++) {
+        const line = lines[j];
+        const trimmed = line.trim();
+        if (!trimmed || /^={10,}$/.test(trimmed)) continue;
+
+        // Detect file processing transition to apply Heading 2
+        const fileMatch = trimmed.match(/Loading Material File:\s*(.+?)(?:\s*\(ID:|\s*$)/i);
+        if (fileMatch) {
+          const heading = body.appendParagraph(`File: ${fileMatch[1].trim()}`);
+          if (heading && heading.setHeading) {
+            heading.setHeading(DocumentApp.ParagraphHeading.HEADING2);
+          }
+          continue;
+        }
+
+        const p = body.appendParagraph(line);
+        p.setFontFamily('Courier New').setFontSize(9);
+        if (/\[ERROR\]|\[FATAL\]|❌/i.test(line)) {
+          p.setForegroundColor('#C62828');
+        } else if (/\[WARN\s*\]|⚠️/i.test(line)) {
+          p.setForegroundColor('#E65100');
+        } else if (/\[DEBUG\]/i.test(line)) {
+          p.setForegroundColor('#757575');
+        }
+      }
+    }
+
+    doc.saveAndClose(); // Guarantee unbuffered write persistence
   } catch (e) {
     Logger.log(`[ERROR] Failed to flush logs to Google Doc: ${e.message}`);
+  }
+}
+
+/**
+ * Emits an executive run summary block to the log buffer and console.
+ */
+function outputExecutionSummary() {
+  const elapsedSec = ((Date.now() - RUN_METRICS.startTime) / 1000).toFixed(1);
+  const summaryLines = [
+    '',
+    '================================================================================',
+    `                       EXECUTION RUN SUMMARY: ${DOC_LOG_FILE_NAME_PREFIX}`,
+    '================================================================================',
+    `Run ID:                 ${RUN_METRICS.runId}`,
+    `Execution Duration:     ${elapsedSec} seconds`,
+    `Time Limit Reached:     ${RUN_METRICS.timeLimitReached ? 'YES (Batch paused at 5-min threshold)' : 'NO (Completed within window)'}`,
+    '',
+    'INTAKE & DISPATCH METRICS:',
+    `  - Files Discovered:       ${RUN_METRICS.filesDiscovered}`,
+    `  - Files Processed:        ${RUN_METRICS.filesProcessed}`,
+    `  - Files Skipped/Archived: ${RUN_METRICS.filesSkipped}`,
+    `  - Emails Sent:            ${RUN_METRICS.emailsSent}`,
+    `  - Emails Drafted:         ${RUN_METRICS.emailsDrafted}`,
+    `  - Unresolvable Routes:    ${RUN_METRICS.routesUnresolved}`,
+    `  - Errors Encountered:     ${RUN_METRICS.errorsEncountered}`,
+    '',
+    'BOUNCE DETECTION & SUPPRESSION:',
+    `  - Bounces Detected:       ${RUN_METRICS.bouncesDetected}`,
+    `  - Suppressed Address Set: ${CACHED_BOUNCED_ADDRESS_SET ? CACHED_BOUNCED_ADDRESS_SET.size : 0} addresses`,
+    '================================================================================',
+    ''
+  ];
+  const summaryBlock = summaryLines.join('\n');
+  Logger.log(summaryBlock);
+  if (ENABLE_DOC_LOGGING) {
+    SCRIPT_LOG_BUFFER.push({
+      isSummary: true,
+      elapsedSec: elapsedSec,
+      rawText: summaryBlock
+    });
   }
 }
 
@@ -355,8 +555,8 @@ function scanForBounces(config) {
       return;
     }
 
-    // Search for delivery failures in the last 14 days
-    const query = '(from:mailer-daemon OR from:postmaster OR subject:"Delivery Status Notification" OR subject:"Undeliverable" OR subject:"Returned to sender") newer_than:14d';
+    // Search for delivery failures in the inbox in the last 14 days
+    const query = 'in:inbox (from:mailer-daemon OR from:postmaster OR subject:"Delivery Status Notification" OR subject:"Undeliverable" OR subject:"Returned to sender") newer_than:14d';
     vLog(`  - [BOUNCE TRACKER] Querying Gmail threads with filter: ${query}`);
     const threads = GmailApp.search(query, 0, 50);
     vLog(`  - [BOUNCE TRACKER] Found ${threads.length} bounce-related message threads.`);
@@ -438,6 +638,7 @@ function scanForBounces(config) {
     });
 
     vLog(`  - [BOUNCE TRACKER] Scan execution complete. Modified ${bounceCount} bounce statuses.`);
+    RUN_METRICS.bouncesDetected += bounceCount;
   } catch (e) {
     vLog(`  - [BOUNCE TRACKER] Warning: Tracking execution encountered an error: ${e.message}`);
   }
@@ -457,7 +658,7 @@ function syncBouncedAddressesFromSheet(config) {
 
     // Pull Status (B) and Target Email (F)
     const rows = sheet.getRange(2, 2, lastRow - 1, 5).getValues();
-    let hydratedCount = 0;
+    const addressesToPersist = new Set();
 
     for (let i = 0; i < rows.length; i++) {
       const statusStr = String(rows[i][0] || '').trim().toUpperCase();
@@ -471,42 +672,71 @@ function syncBouncedAddressesFromSheet(config) {
         .split(',')
         .map(e => sanitizeEmailAddress(e))
         .filter(Boolean)
-        .forEach(email => {
-          persistBouncedAddress(email);
-          hydratedCount++;
-        });
+        .forEach(email => addressesToPersist.add(email));
     }
 
-    if (hydratedCount > 0) {
-      vLog(`  - [BOUNCE SUPPRESSION] Hydrated ${hydratedCount} bounced target(s) from historical sheet rows.`);
+    if (addressesToPersist.size > 0) {
+      persistBouncedAddresses(Array.from(addressesToPersist));
+      vLog(`  - [BOUNCE SUPPRESSION] Hydrated ${addressesToPersist.size} unique bounced target(s) from historical sheet rows.`);
     }
   } catch (e) {
     vLog(`  - [BOUNCE SUPPRESSION] Warning: Could not hydrate historical bounced addresses: ${e.message}`);
   }
 }
 
+/**
+ * Persists a single bounced address to the in-memory cache and script properties store.
+ */
 function persistBouncedAddress(email) {
   if (!email) return;
-  const normalized = String(email).trim().toLowerCase();
-  if (!normalized) return;
+  persistBouncedAddresses([email]);
+}
 
-  if (CACHED_BOUNCED_ADDRESS_SET !== null) {
-    CACHED_BOUNCED_ADDRESS_SET.add(normalized);
+/**
+ * Batches persistence of bounced addresses to avoid redundant PropertiesService I/O
+ * and enforces safe storage caps to protect against the 9 KB property size limit.
+ */
+function persistBouncedAddresses(emails) {
+  if (!emails || !emails.length) return;
+  const normalizedList = (Array.isArray(emails) ? emails : Array.from(emails))
+    .map(e => String(e || '').trim().toLowerCase())
+    .filter(Boolean);
+  if (!normalizedList.length) return;
+
+  if (CACHED_BOUNCED_ADDRESS_SET === null) {
+    getBouncedAddressSet();
   }
+  normalizedList.forEach(e => CACHED_BOUNCED_ADDRESS_SET.add(e));
 
   try {
     const props = PropertiesService.getScriptProperties();
     const existing = props.getProperty('BOUNCED_ADDRESSES') || '';
     const existingSet = new Set(existing.split('\n').map(e => e.trim()).filter(Boolean));
-    if (!existingSet.has(normalized)) {
-      existingSet.add(normalized);
-      props.setProperty('BOUNCED_ADDRESSES', Array.from(existingSet).join('\n'));
-      vLog(`  - [BOUNCE SUPPRESSION] Persisted bounced address to suppression store: ${normalized}`);
-    } else {
-      vLog(`  - [BOUNCE SUPPRESSION] Address already present in suppression store: ${normalized}`);
+    let hasNew = false;
+
+    normalizedList.forEach(e => {
+      if (!existingSet.has(e)) {
+        existingSet.add(e);
+        hasNew = true;
+      }
+    });
+
+    if (hasNew) {
+      let arrayToStore = Array.from(existingSet);
+      // Guard against Google Apps Script 9,216-byte property limit (target safe cap: 8,000 bytes)
+      let serialized = arrayToStore.join('\n');
+      if (serialized.length > 8000) {
+        AppLogger.warn('BOUNCES', `Bounce suppression store nearing 9 KB quota (${serialized.length} bytes). Pruning oldest entries.`);
+        while (arrayToStore.length > 100 && arrayToStore.join('\n').length > 8000) {
+          arrayToStore.shift(); // Evict oldest recorded address
+        }
+        serialized = arrayToStore.join('\n');
+      }
+      props.setProperty('BOUNCED_ADDRESSES', serialized);
+      vLog(`  - [BOUNCE SUPPRESSION] Updated suppression store (total stored: ${arrayToStore.length} addresses).`);
     }
   } catch (e) {
-    vLog(`  - [BOUNCE SUPPRESSION] Warning: Could not persist bounced address: ${e.message}`);
+    vLog(`  - [BOUNCE SUPPRESSION] Warning: Could not persist bounced address(es): ${e.message}`);
   }
 }
 
@@ -525,7 +755,8 @@ function getBouncedAddressSet() {
     return CACHED_BOUNCED_ADDRESS_SET;
   } catch (e) {
     vLog(`  - [BOUNCE SUPPRESSION] Warning: Could not read bounce suppression store: ${e.message}`);
-    return new Set();
+    CACHED_BOUNCED_ADDRESS_SET = new Set();
+    return CACHED_BOUNCED_ADDRESS_SET;
   }
 }
 
@@ -604,7 +835,7 @@ function appendToSpreadsheetLog(params, config) {
       params.jobUrl || ''
     ];
 
-    vLog(`[SHEET LOG] Appending metadata vector at Row ${sheet.getLastRow() + 1}: ${JSON.stringify(newRow)}`);
+    vLog(`[SHEET LOG] Appended row ${sheet.getLastRow() + 1} | status=${params.status || 'UNKNOWN'} company="${params.company || ''}" targetEmail="${params.targetEmail || ''}"`);
     sheet.getRange(sheet.getLastRow() + 1, 1, 1, newRow.length).setValues([newRow]);
     vLog(`[SHEET LOG] Successfully verified logging entry.`);
   } catch (e) {
@@ -625,17 +856,27 @@ function parseMarkdown(fileContent) {
   const metadata = {};
   let content = '';
 
-  const separatorRegex = /\r?\n\s*---\s*\r?\n/;
-  const match = fileContent.match(separatorRegex);
-  
-  if (!match) {
-    vLog('[PARSER] [FATAL] Target document layout invalid. Missing metadata block divider (---).');
-    throw new Error(`Invalid file format. Could not find the "---" separator.`);
-  }
+  let metadataBlock = '';
+  let contentBlock = '';
 
-  const splitIndex = match.index;
-  const metadataBlock = fileContent.substring(0, splitIndex);
-  const contentBlock = fileContent.substring(splitIndex + match[0].length);
+  const frontmatterMatch = fileContent.match(/^\s*---\s*\r?\n([\s\S]*?)\r?\n\s*---\s*\r?\n([\s\S]*)$/);
+  if (frontmatterMatch) {
+    metadataBlock = frontmatterMatch[1];
+    contentBlock = frontmatterMatch[2];
+    vLog('[PARSER] Detected YAML/frontmatter-style metadata header enclosed by "---".');
+  } else {
+    const separatorRegex = /\r?\n\s*---\s*\r?\n/;
+    const match = fileContent.match(separatorRegex);
+    
+    if (!match) {
+      vLog('[PARSER] [FATAL] Target document layout invalid. Missing metadata block divider (---).');
+      throw new Error(`Invalid file format. Could not find the "---" separator.`);
+    }
+
+    const splitIndex = match.index;
+    metadataBlock = fileContent.substring(0, splitIndex);
+    contentBlock = fileContent.substring(splitIndex + match[0].length);
+  }
   
   vLog('[PARSER] Successfully divided file segments into Metadata and Content zones.');
   ['Company', 'Job ID'].forEach(fieldName => {
@@ -669,7 +910,7 @@ function parseMarkdown(fileContent) {
     const value = section.substring(headerMatch[0].length).trim();
     vLog(`  - [PARSER] Evaluating Header #${idx + 1}: Title: "${title}"`);
 
-    let cleanTitle = title.replace(/^Optimized\s*&\s*Tailored\s+/i, '').trim();
+    let cleanTitle = title.replace(/^(?:Optimized\s*&\s*Tailored|Optimized|Tailored)\s+/i, '').trim();
     if (cleanTitle === 'Materials Filename') {
       cleanTitle = 'Resume Filename';
       vLog(`  - [PARSER] Normalizing 'Materials Filename' -> 'Resume Filename'`);
@@ -696,10 +937,11 @@ function parseMarkdown(fileContent) {
 
 /**
  * Extracts a markdown bold metadata field flexibly matching variations like **Field:** or **Field**:
+ * and handles bullet list variations like - **Field:** or * **Field:**
  */
 function extractBoldMetadataField(metadataBlock, fieldName) {
   const escapedFieldName = escapeRegex(fieldName);
-  const pattern = new RegExp(`^\\s*\\*\\*${escapedFieldName}[\\*:\\s]*(.+?)\\s*$`, 'im');
+  const pattern = new RegExp(`^[\\s\\*\\-]*\\*\\*${escapedFieldName}[\\*:\\s]*(.+?)\\s*$`, 'im');
   const match = String(metadataBlock || '').match(pattern);
   return match && match[1] ? match[1].trim() : '';
 }
@@ -807,7 +1049,9 @@ Rules:
  * Cleans common non-answer artifacts and reasoning tags from OpenRouter plaintext responses.
  */
 function cleanOpenRouterPlainTextResponse(fullResponse) {
-  let cleaned = String(fullResponse || '').replace(/<think>[\s\S]*?<\/think>/gi, '');
+  let cleaned = String(fullResponse || '')
+    .replace(/<think>[\s\S]*?<\/think>/gi, '')
+    .replace(/<think>[\s\S]*$/gi, '');
   const lines = cleaned.split('\n');
   const filteredLines =[];
 
@@ -888,8 +1132,8 @@ function askOpenRouterOnce(prompt, config, overrides) {
   vLog(`[API EXECUTION] Raw response payload length: ${responseBody.length} characters.`);
 
   if (responseCode !== 200) {
-    vLog(`[API ERROR] Non-200 Status output: ${responseBody}`);
-    const error = new Error(`OpenRouter API request failed with status code ${responseCode}. Response: ${responseBody}`);
+    vLog(`[API ERROR] Non-200 Status (${responseCode}): ${truncateText(responseBody, 300)}`);
+    const error = new Error(`OpenRouter API request failed with status code ${responseCode}. Response: ${truncateText(responseBody, 500)}`);
     error.responseCode = responseCode;
     throw error;
   }
@@ -1177,6 +1421,16 @@ function getManualEmailSource(metadata) {
       evidenceSummary: 'Recruiter Email was supplied directly in the material file.',
       caveat: 'Manual recruiter route.',
       recommendedAction: DISCOVERY_ACTIONS.CREATE_DRAFT
+    },
+    {
+      field: 'Hiring Manager Email',
+      email: getMetadataValue(metadata, 'Hiring Manager Email'),
+      tier: DISCOVERY_TIERS.PUBLIC_RECRUITER_OR_HIRING_TEAM,
+      confidence: 0.90,
+      score: 85,
+      evidenceSummary: 'Hiring Manager Email was supplied directly in the material file.',
+      caveat: 'Manual hiring manager route.',
+      recommendedAction: DISCOVERY_ACTIONS.CREATE_DRAFT
     }
   ];
 
@@ -1188,25 +1442,52 @@ function getManualEmailSource(metadata) {
 }
 
 /**
- * Parses a JSON object from an LLM response safely, resilient to reasoning tags.
+ * Parses a JSON object from an LLM response safely, resilient to reasoning tags,
+ * markdown code fences, and trailing commas.
  */
 function parseJsonObjectFromText(text) {
-  let cleaned = String(text).trim();
-  // Strip <think> tags if present before parsing JSON
+  let cleaned = String(text || '').trim();
+  const cleanTrailingCommas = (str) => String(str || '').replace(/,\s*([}\]])/g, '$1');
+
+  // 1. Strip closed <think>...</think> tags first
   cleaned = cleaned.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
-  cleaned = cleaned.replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/\s*```$/i, '').trim();
-  
+
+  // 2. Extract and parse markdown code fences (```json ... ``` or ``` ... ```) if present
+  const fenceRegex = /```(?:json)?\s*([\s\S]*?)\s*```/gi;
+  let match;
+  while ((match = fenceRegex.exec(cleaned)) !== null) {
+    const inner = match[1].trim();
+    try {
+      return JSON.parse(cleanTrailingCommas(inner));
+    } catch (e) {
+      const fb = inner.indexOf('{');
+      const lb = inner.lastIndexOf('}');
+      if (fb >= 0 && lb > fb) {
+        try {
+          return JSON.parse(cleanTrailingCommas(inner.substring(fb, lb + 1)));
+        } catch (innerErr) {
+          // Continue to next code fence if available
+        }
+      }
+    }
+  }
+
+  // 3. Strip leading/trailing code fence markers if unclosed
+  cleaned = cleaned.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
+
+  // 4. Try direct parse
   try {
-    return JSON.parse(cleaned);
+    return JSON.parse(cleanTrailingCommas(cleaned));
   } catch (directError) {
-    vLog(`[PARSER] Direct JSON parse failed. Extracting matching text block boundaries...`);
+    AppLogger.debug('LLM', 'Direct JSON parse failed. Extracting matching text block boundaries...');
     const firstBrace = cleaned.indexOf('{');
     const lastBrace = cleaned.lastIndexOf('}');
     if (firstBrace >= 0 && lastBrace > firstBrace) {
       try {
-        return JSON.parse(cleaned.substring(firstBrace, lastBrace + 1));
+        const candidate = cleanTrailingCommas(cleaned.substring(firstBrace, lastBrace + 1));
+        return JSON.parse(candidate);
       } catch (e) {
-        vLog(`[PARSER] Substring block extraction parsed invalid structural JSON: ${e.message}`);
+        AppLogger.warn('LLM', `Substring block extraction parsed invalid structural JSON: ${e.message}`);
         throw new Error(`Extracted JSON was invalid: ${e.message}`);
       }
     }
@@ -1571,7 +1852,8 @@ function dispatchApplicationEmail(metadata, fullCoverLetterText, resumeFile, dis
   
   if (ATTACH_RESUME_PDF && resumeFile) {
     vLog(`[EMAIL ENGINE] Packing file attachment target: "${resumeFile.getName()}" as PDF.`);
-    options.attachments =[resumeFile.getAs(MimeType.PDF).setName(`${safeFilename(resumeFile.getName())}.pdf`)];
+    const cleanResumeBaseName = safeFilename(resumeFile.getName()).replace(/\.pdf$/i, '');
+    options.attachments =[resumeFile.getAs(MimeType.PDF).setName(`${cleanResumeBaseName}.pdf`)];
   }
 
   if (AUTO_SEND_EMAILS) {
@@ -1579,6 +1861,7 @@ function dispatchApplicationEmail(metadata, fullCoverLetterText, resumeFile, dis
     try {
       GmailApp.sendEmail(to, subject, plainBody, options);
       vLog('[EMAIL ENGINE] Mail sent successfully.');
+      RUN_METRICS.emailsSent += targetEmails.length;
       return { getId: () => 'SENT_AUTOMATICALLY', isSent: true, targetEmails, from: options.from || '' };
     } catch (sendError) {
       vLog(`[EMAIL ENGINE] [WARNING] Bulk send failed ("${sendError.message}"). Attempting per-recipient dispatch...`);
@@ -1597,6 +1880,7 @@ function dispatchApplicationEmail(metadata, fullCoverLetterText, resumeFile, dis
       });
 
       if (successfulEmails.length > 0) {
+        RUN_METRICS.emailsSent += successfulEmails.length;
         return { getId: () => 'SENT_AUTOMATICALLY', isSent: true, targetEmails: successfulEmails, from: options.from || '' };
       }
       throw new Error(`Email send failed for all recipients: ${failedEmails.join('; ')}`);
@@ -1609,6 +1893,7 @@ function dispatchApplicationEmail(metadata, fullCoverLetterText, resumeFile, dis
       draft.targetEmails = targetEmails;
       draft.from = options.from || '';
       vLog(`[EMAIL ENGINE] Gmail Draft compiled successfully. Draft ID: ${draft.getId()}`);
+      RUN_METRICS.emailsDrafted += targetEmails.length;
       return draft;
     } catch (draftError) {
       vLog(`[EMAIL ENGINE] [WARNING] Bulk draft creation failed ("${draftError.message}"). Attempting per-recipient draft creation...`);
@@ -1632,6 +1917,7 @@ function dispatchApplicationEmail(metadata, fullCoverLetterText, resumeFile, dis
         lastDraft.isSent = false;
         lastDraft.targetEmails = successfulDrafts;
         lastDraft.from = options.from || '';
+        RUN_METRICS.emailsDrafted += successfulDrafts.length;
         return lastDraft;
       }
       throw new Error(`Gmail draft creation failed for all recipients: ${failedEmails.join('; ')}`);
@@ -1675,12 +1961,12 @@ function classifyCandidateTier(email, context) {
 }
 
 function isRecruitingOrCareerLocalPart(localPart) {
-  return /^(careers?|jobs?|apply|resume|recruiting|talent|hr|people)$/i.test(String(localPart || '').trim());
+  return /^(careers?|jobs?|apply|resume|recruiting|recruitment|talent|talentacquisition|ta|hiring|hr|people)$/i.test(String(localPart || '').trim());
 }
 
 function normalizeSourceType(sourceType) {
   const value = String(sourceType || '').trim().toLowerCase();
-  if (/ats|workday|greenhouse|lever|ashby|smartrecruiters/.test(value))          return 'ats_page';
+  if (/ats|workday|greenhouse|lever|ashby|smartrecruiters|icims|jobvite|taleo|breezy|bamboohr|rippling/.test(value)) return 'ats_page';
   if (/career|careers|hiring[-_\s]?page/.test(value))                             return 'official_careers_page';
   if (/job[_\s-]?posting|job[_\s-]?page|posting/.test(value))                     return 'official_job_posting';
   if (/official[_\s-]?site|company|homepage|website/.test(value))                 return 'official_company_page';
@@ -1726,6 +2012,12 @@ function detectAtsPlatform(url) {
   if (text.includes('lever')) return 'Lever';
   if (text.includes('ashby')) return 'Ashby';
   if (text.includes('smartrecruiters')) return 'SmartRecruiters';
+  if (text.includes('icims')) return 'iCIMS';
+  if (text.includes('jobvite')) return 'Jobvite';
+  if (text.includes('taleo')) return 'Taleo';
+  if (text.includes('breezy')) return 'Breezy HR';
+  if (text.includes('bamboohr')) return 'BambooHR';
+  if (text.includes('rippling')) return 'Rippling';
   return '';
 }
 
@@ -1827,7 +2119,10 @@ function generateCoverLetterDoc(coverTemplate, targetFolder, metadata, coverLett
     return { file: newCoverFile, text: coverText };
   }
 
-  return { file: newCoverFile, text: getFullDocumentText(DocumentApp.openById(newCoverFile.getId())) };
+  const reopenedDoc = DocumentApp.openById(newCoverFile.getId());
+  const coverText = getFullDocumentText(reopenedDoc);
+  reopenedDoc.saveAndClose();
+  return { file: newCoverFile, text: coverText };
 }
 
 /**
@@ -1864,11 +2159,32 @@ function getRearJobTitlePortion(metadata) {
 }
 
 /**
+ * Computes the base name for the LinkedIn document and rendered .desktop file.
+ */
+function getLinkedInDocBaseName(metadata, config) {
+  const rearPortion = getRearJobTitlePortion(metadata).replace(/\.pdf$/i, '');
+  const applicantName = (config && config.applicantName) ? config.applicantName : 'Alex Morgan';
+  const applicantPrefix = applicantName.replace(/[^\w]/g, '_');
+  return `${applicantPrefix}_LinkedIn_${rearPortion}`;
+}
+
+/**
+ * Derives a concise, human-readable posting name for the KDE Plasma .desktop shortcut.
+ */
+function getHumanReadablePostingName(metadata) {
+  const company = oneLinePlainText(getMetadataValue(metadata, 'Company'));
+  const title = oneLinePlainText(getBestJobTitle(metadata));
+  if (company && title) return `${company} - ${title}`;
+  if (title) return title;
+  if (company) return `${company} - Job Posting`;
+  return 'LinkedIn Job Posting';
+}
+
+/**
  * Generates the third output file containing the LinkedIn posting URL.
  */
-function generateLinkedInDoc(targetFolder, metadata, jobUrl) {
-  const rearPortion = getRearJobTitlePortion(metadata);
-  const linkedInFileName = `REDACTED_NAME_LinkedIn_${rearPortion}`;
+function generateLinkedInDoc(targetFolder, metadata, jobUrl, config) {
+  const linkedInFileName = getLinkedInDocBaseName(metadata, config);
   vLog(`[LINKEDIN DOC GENERATOR] Preparing creation of: "${linkedInFileName}"...`);
   
   if (REUSE_EXISTING_GENERATED_FILES) {
@@ -1883,7 +2199,15 @@ function generateLinkedInDoc(targetFolder, metadata, jobUrl) {
   const newDoc = DocumentApp.create(linkedInFileName);
   const body = newDoc.getBody();
   
-  body.appendParagraph("LinkedIn Job Posting URL:").setBold(true);
+  // Clean initial empty paragraph if present
+  const firstParagraph = body.getParagraphs()[0];
+  if (firstParagraph && firstParagraph.getText() === '') {
+    firstParagraph.editAsText().setText("LinkedIn Job Posting URL:");
+    if (firstParagraph.setBold) firstParagraph.setBold(true);
+  } else {
+    const p = body.appendParagraph("LinkedIn Job Posting URL:");
+    if (p && p.setBold) p.setBold(true);
+  }
   const linkParagraph = body.appendParagraph(jobUrl);
   linkParagraph.setLinkUrl(jobUrl);
   newDoc.saveAndClose();
@@ -1895,9 +2219,216 @@ function generateLinkedInDoc(targetFolder, metadata, jobUrl) {
   return file;
 }
 
+/**
+ * Computes a standardized folder name for an application's rendered package materials.
+ */
+function getRenderPackageFolderName(metadata, config) {
+  const applicantName = (config && config.applicantName) ? config.applicantName : 'Alex Morgan';
+  const applicantPrefix = applicantName.replace(/[^\w]/g, '_');
+
+  const manualResumeName = getMetadataValue(metadata, 'Resume Filename') || getMetadataValue(metadata, 'Materials Filename');
+  const manualCoverName = getMetadataValue(metadata, 'Cover Letter Filename');
+
+  if (manualResumeName || manualCoverName) {
+    const rearPortion = getRearJobTitlePortion(metadata).replace(/\.pdf$/i, '').trim();
+    if (rearPortion) {
+      if (rearPortion.startsWith(applicantPrefix)) {
+        return safeFilename(rearPortion);
+      }
+      return safeFilename(`${applicantPrefix}_${rearPortion}`);
+    }
+  }
+
+  const jobId = getMetadataValue(metadata, 'Job ID');
+  const company = getMetadataValue(metadata, 'Company');
+  const jobTitle = getBestJobTitle(metadata);
+
+  if (jobId && company) {
+    return safeFilename(`${jobId} - ${company}`);
+  }
+  if (company && jobTitle) {
+    return safeFilename(`${company} - ${jobTitle}`);
+  }
+  if (jobId) {
+    return safeFilename(jobId);
+  }
+  if (company) {
+    return safeFilename(company);
+  }
+  return safeFilename(`${applicantPrefix}_Job_Materials`);
+}
+
+/**
+ * Searches for an active (non-trashed) subfolder by exact name inside parentFolder.
+ */
+function findFolderByExactNameInFolder(parentFolder, folderName) {
+  const folders = parentFolder.getFoldersByName(folderName);
+  while (folders.hasNext()) {
+    const folder = folders.next();
+    if (!folder.isTrashed()) return folder;
+  }
+  return null;
+}
+
+/**
+ * Retrieves an existing package subfolder or creates a new one within parentFolder.
+ */
+function getOrCreatePackageFolder(parentFolder, folderName) {
+  if (REUSE_EXISTING_GENERATED_FILES) {
+    const existing = findFolderByExactNameInFolder(parentFolder, folderName);
+    if (existing) {
+      vLog(`  - [RENDER ENGINE] Reusing existing package folder ID: ${existing.getId()} ("${folderName}")`);
+      return existing;
+    }
+  }
+
+  const newFolder = parentFolder.createFolder(folderName);
+  vLog(`  - [RENDER ENGINE] Created new package folder ID: ${newFolder.getId()} ("${folderName}")`);
+  return newFolder;
+}
+
+/**
+ * Renders the application package artifacts (Tailored Resume PDF, Tailored Cover Letter PDF,
+ * and LinkedIn posting URL KDE Plasma .desktop shortcut) into a dedicated package subfolder
+ * within TARGET_FOLDER_ID_RENDER.
+ */
+function renderApplicationPackage(params) {
+  const { targetRenderFolder, resumeFile, coverFile, metadata, jobUrl, config } = params;
+  if (!targetRenderFolder) {
+    vLog('[RENDER ENGINE] [WARNING] Target render folder is missing. Skipping package rendering.');
+    return { packageFolder: null, resumePdfFile: null, coverPdfFile: null, desktopFile: null };
+  }
+
+  const packageFolderName = getRenderPackageFolderName(metadata, config);
+  vLog(`[RENDER ENGINE] Resolving package subfolder "${packageFolderName}" in TARGET_FOLDER_ID_RENDER...`);
+  const packageFolder = getOrCreatePackageFolder(targetRenderFolder, packageFolderName);
+
+  vLog(`[RENDER ENGINE] Initiating rendering of application package into folder "${packageFolder.getName()}" (ID: ${packageFolder.getId()})...`);
+  const rendered = {
+    packageFolder: packageFolder,
+    resumePdfFile: null,
+    coverPdfFile: null,
+    desktopFile: null
+  };
+  const errors = [];
+
+  // 1. Tailored Resume -> PDF
+  if (resumeFile) {
+    try {
+      const cleanResumeBaseName = safeFilename(resumeFile.getName()).replace(/\.pdf$/i, '');
+      const resumePdfName = `${cleanResumeBaseName}.pdf`;
+      vLog(`[RENDER ENGINE] Preparing Resume PDF: "${resumePdfName}"...`);
+
+      let resumePdfFile = null;
+      if (REUSE_EXISTING_GENERATED_FILES) {
+        resumePdfFile = findFileByExactNameInFolder(packageFolder, resumePdfName);
+        if (resumePdfFile) {
+          vLog(`  - [RENDER ENGINE] Reusing existing rendered Resume PDF ID: ${resumePdfFile.getId()} ("${resumePdfName}")`);
+        }
+      }
+
+      if (!resumePdfFile) {
+        const resumeBlob = resumeFile.getAs(MimeType.PDF).setName(resumePdfName);
+        resumePdfFile = packageFolder.createFile(resumeBlob);
+        vLog(`  - [RENDER ENGINE] Rendered Resume PDF created successfully. File ID: ${resumePdfFile.getId()}`);
+      }
+      rendered.resumePdfFile = resumePdfFile;
+    } catch (e) {
+      const msg = `Resume PDF generation failed: ${e.message}`;
+      vLog(`  - ❌ [RENDER ENGINE] [ERROR] ${msg}`);
+      errors.push(msg);
+    }
+  } else {
+    vLog('  - [RENDER ENGINE] [WARNING] Resume file not provided. Skipping Resume PDF rendering.');
+  }
+
+  // 2. Tailored Cover Letter -> PDF
+  if (coverFile) {
+    try {
+      const cleanCoverBaseName = safeFilename(coverFile.getName()).replace(/\.pdf$/i, '');
+      const coverPdfName = `${cleanCoverBaseName}.pdf`;
+      vLog(`[RENDER ENGINE] Preparing Cover Letter PDF: "${coverPdfName}"...`);
+
+      let coverPdfFile = null;
+      if (REUSE_EXISTING_GENERATED_FILES) {
+        coverPdfFile = findFileByExactNameInFolder(packageFolder, coverPdfName);
+        if (coverPdfFile) {
+          vLog(`  - [RENDER ENGINE] Reusing existing rendered Cover Letter PDF ID: ${coverPdfFile.getId()} ("${coverPdfName}")`);
+        }
+      }
+
+      if (!coverPdfFile) {
+        const coverBlob = coverFile.getAs(MimeType.PDF).setName(coverPdfName);
+        coverPdfFile = packageFolder.createFile(coverBlob);
+        vLog(`  - [RENDER ENGINE] Rendered Cover Letter PDF created successfully. File ID: ${coverPdfFile.getId()}`);
+      }
+      rendered.coverPdfFile = coverPdfFile;
+    } catch (e) {
+      const msg = `Cover Letter PDF generation failed: ${e.message}`;
+      vLog(`  - ❌ [RENDER ENGINE] [ERROR] ${msg}`);
+      errors.push(msg);
+    }
+  } else {
+    vLog('  - [RENDER ENGINE] [WARNING] Cover Letter file not provided. Skipping Cover Letter PDF rendering.');
+  }
+
+  // 3. LinkedIn Posting URL -> KDE Plasma .desktop file
+  if (jobUrl) {
+    try {
+      const linkedInBaseName = getLinkedInDocBaseName(metadata, config);
+      const cleanDesktopBaseName = safeFilename(linkedInBaseName).replace(/\.desktop$/i, '');
+      const desktopFileName = `${cleanDesktopBaseName}.desktop`;
+      vLog(`[RENDER ENGINE] Preparing LinkedIn .desktop shortcut: "${desktopFileName}"...`);
+
+      let desktopFile = null;
+      if (REUSE_EXISTING_GENERATED_FILES) {
+        desktopFile = findFileByExactNameInFolder(packageFolder, desktopFileName);
+        if (desktopFile) {
+          vLog(`  - [RENDER ENGINE] Reusing existing rendered LinkedIn .desktop file ID: ${desktopFile.getId()} ("${desktopFileName}")`);
+        }
+      }
+
+      if (!desktopFile) {
+        const humanReadableName = getHumanReadablePostingName(metadata);
+        const resolvedUrl = sanitizeUrl(jobUrl) || String(jobUrl).trim();
+        const desktopContent = [
+          '[Desktop Entry]',
+          'Type=Link',
+          `Name=${humanReadableName}`,
+          `URL=${resolvedUrl}`,
+          'Icon=internet-web-browser',
+          ''
+        ].join('\n');
+
+        const desktopBlob = Utilities.newBlob(desktopContent, MimeType.PLAIN_TEXT, desktopFileName);
+        desktopFile = packageFolder.createFile(desktopBlob);
+        vLog(`  - [RENDER ENGINE] Rendered LinkedIn .desktop file created successfully. File ID: ${desktopFile.getId()}`);
+      }
+      rendered.desktopFile = desktopFile;
+    } catch (e) {
+      const msg = `LinkedIn .desktop file generation failed: ${e.message}`;
+      vLog(`  - ❌ [RENDER ENGINE] [ERROR] ${msg}`);
+      errors.push(msg);
+    }
+  } else {
+    vLog('  - [RENDER ENGINE] [WARNING] Job URL parameter missing. Skipping LinkedIn .desktop file rendering.');
+  }
+
+  if (errors.length > 0) {
+    AppLogger.error('RENDER', `Encountered ${errors.length} error(s) during package rendering: ${errors.join('; ')}`);
+    throw new Error(`Package rendering failed: ${errors.join('; ')}`);
+  }
+
+  return rendered;
+}
+
 function findFileByExactNameInFolder(folder, fileName) {
   const files = folder.getFilesByName(fileName);
-  return files.hasNext() ? files.next() : null;
+  while (files.hasNext()) {
+    const file = files.next();
+    if (!file.isTrashed()) return file;
+  }
+  return null;
 }
 
 function removeStarLabels(body) {
@@ -1958,31 +2489,38 @@ function cleanupTopHeaderSeparators(container, maxChildren) {
 }
 
 function shouldProcessSourceMaterialFile(file) {
+  try {
+    if (file.isTrashed && file.isTrashed()) return false;
+  } catch (e) {}
   const name = String(file.getName() || '').toLowerCase();
   return /\.(md|markdown|txt)$/.test(name) || file.getMimeType() === MimeType.PLAIN_TEXT;
 }
 
 function getRequiredDeploymentConfig() {
-  if (ENABLE_DOC_LOGGING && !DOC_LOG_FOLDER_ID) {
+  const scriptProperties = PropertiesService.getScriptProperties();
+  const configuredDocLogFolder = scriptProperties.getProperty(SCRIPT_PROPERTIES.DOC_LOG_FOLDER_ID) || DOC_LOG_FOLDER_ID;
+  if (ENABLE_DOC_LOGGING && !configuredDocLogFolder) {
     throw new Error('DOC_LOG_FOLDER_ID must be configured when ENABLE_DOC_LOGGING is true.');
   }
 
-  const scriptProperties = PropertiesService.getScriptProperties();
   const config = {
     sourceFolderId: scriptProperties.getProperty(SCRIPT_PROPERTIES.SOURCE_FOLDER_ID),
     targetFolderId: scriptProperties.getProperty(SCRIPT_PROPERTIES.TARGET_FOLDER_ID),
+    targetFolderIdRender: scriptProperties.getProperty(SCRIPT_PROPERTIES.TARGET_FOLDER_ID_RENDER),
     processedFolderId: scriptProperties.getProperty(SCRIPT_PROPERTIES.PROCESSED_FOLDER_ID),
     resumeTemplateId: scriptProperties.getProperty(SCRIPT_PROPERTIES.RESUME_TEMPLATE_ID),
     coverTemplateId: scriptProperties.getProperty(SCRIPT_PROPERTIES.COVER_LETTER_TEMPLATE_ID),
-    orApiKey: scriptProperties.getProperty(SCRIPT_PROPERTIES.OR_API_KEY), // Updated: poeApiKey -> orApiKey / POE_API_KEY -> OR_API_KEY
+    orApiKey: scriptProperties.getProperty(SCRIPT_PROPERTIES.OR_API_KEY),
     spreadsheetLogId: scriptProperties.getProperty(SCRIPT_PROPERTIES.SPREADSHEET_LOG_ID),
     applicantName: scriptProperties.getProperty(SCRIPT_PROPERTIES.APPLICANT_NAME),
-    applicantEmail: scriptProperties.getProperty(SCRIPT_PROPERTIES.APPLICANT_EMAIL)
+    applicantEmail: scriptProperties.getProperty(SCRIPT_PROPERTIES.APPLICANT_EMAIL),
+    docLogFolderId: configuredDocLogFolder
   };
 
   const requiredKeys = [
     'sourceFolderId',
     'targetFolderId',
+    'targetFolderIdRender',
     'processedFolderId',
     'resumeTemplateId',
     'coverTemplateId',
@@ -2011,18 +2549,19 @@ function deployMaterials() {
     throw new Error('Could not acquire script lock.');
   }
 
+  let config = null;
   try {
     vLog('[ORCHESTRATOR] Script lock claimed. Starting execution engine pass...');
-    PropertiesService.getScriptProperties().deleteProperty(CONTINUATION_TRIGGER_GUARD_PROP);
-    const config = getRequiredDeploymentConfig();
+    config = getRequiredDeploymentConfig();
     const sourceFolder = DriveApp.getFolderById(config.sourceFolderId);
     const targetFolder = DriveApp.getFolderById(config.targetFolderId);
+    const targetRenderFolder = DriveApp.getFolderById(config.targetFolderIdRender);
     const processedFolder = DriveApp.getFolderById(config.processedFolderId);
     const resumeTemplate = DriveApp.getFileById(config.resumeTemplateId);
     const coverTemplate = DriveApp.getFileById(config.coverTemplateId);
     const materialFiles = sourceFolder.getFiles();
 
-    vLog(`[ORCHESTRATOR] Folders identified. Source Folder ID: ${config.sourceFolderId}, Target Folder ID: ${config.targetFolderId}`);
+    vLog(`[ORCHESTRATOR] Folders identified. Source Folder ID: ${config.sourceFolderId}, Target Folder ID: ${config.targetFolderId}, Render Target Folder ID: ${config.targetFolderIdRender}`);
 
     try {
       preflightGmailDraftAuthorization(config);
@@ -2044,35 +2583,37 @@ function deployMaterials() {
 
     while (materialFiles.hasNext()) {
       if (Date.now() - startTime > MAX_EXECUTION_MS) {
-        vLog('[ORCHESTRATOR] ⏳ Execution window near maximum safe threshold. Scheduling trigger loop for next run...');
-        scheduleDeployMaterialsContinuationTrigger();
+        vLog('[ORCHESTRATOR] ⏳ Execution window reached safe time limit (5 minutes). Halting file processing for this run.');
+        RUN_METRICS.timeLimitReached = true;
         break;
       }
 
       const file = materialFiles.next();
+      RUN_METRICS.filesDiscovered++;
+
       if (!shouldProcessSourceMaterialFile(file)) {
         vLog(`[ORCHESTRATOR] File: "${file.getName()}" does not match criteria. Skipping.`);
         continue;
       }
 
       try {
-        processSingleMaterialFile({ file, targetFolder, processedFolder, resumeTemplate, coverTemplate, processedJobIds, config });
+        processSingleMaterialFile({ file, targetFolder, targetRenderFolder, processedFolder, resumeTemplate, coverTemplate, processedJobIds, config });
       } catch (e) {
         vLog(`[ORCHESTRATOR] [ERROR] Failed processing loop target "${file.getName()}": ${e.message}`);
       }
       
       // Flush logs after processing each file to ensure safe state
-      flushDocLogs();
+      flushDocLogs(config && config.docLogFolderId);
     }
     vLog('[ORCHESTRATOR] 🏁 Deployment loop finalized.');
   } catch (err) {
     vLog(`[ORCHESTRATOR] [FATAL] execution halted: ${err.message}`);
     throw err;
   } finally {
+    outputExecutionSummary();
+    flushDocLogs(config && config.docLogFolderId);
     lock.releaseLock();
     vLog('[ORCHESTRATOR] Release execution lock safely.');
-    // Final flush to catch any remaining logs
-    flushDocLogs();
   }
 }
 
@@ -2080,7 +2621,8 @@ function deployMaterials() {
  * Processes one source material file.
  */
 function processSingleMaterialFile(params) {
-  const { file, targetFolder, processedFolder, resumeTemplate, coverTemplate, processedJobIds, config } = params;
+  const { file, targetFolder, targetRenderFolder, processedFolder, resumeTemplate, coverTemplate, processedJobIds, config } = params;
+  const resolvedTargetRenderFolder = targetRenderFolder || (config && config.targetFolderIdRender ? DriveApp.getFolderById(config.targetFolderIdRender) : null);
   let shouldMoveSourceFile = MOVE_SOURCE_FILE_AFTER_SUCCESS;
   let hasLoggedFailure = false;
   let discoveryResult = null;
@@ -2092,6 +2634,7 @@ function processSingleMaterialFile(params) {
   try {
     parsed = parseMarkdown(file.getBlob().getDataAsString());
   } catch (e) {
+    RUN_METRICS.errorsEncountered++;
     vLog(`  - ❌ [PARSER ERROR] Failed to parse material file "${file.getName()}": ${e.message}`);
     appendToSpreadsheetLog({
       status: 'PARSER_FAILED',
@@ -2104,6 +2647,12 @@ function processSingleMaterialFile(params) {
       messageId: `ERROR: ${truncateText(e.message || 'Parse error', 150)}`,
       jobUrl: ''
     }, config);
+    if (ARCHIVE_UNRESOLVED_FILES) {
+      try {
+        file.moveTo(processedFolder);
+        vLog(`  - [PARSER] Moved unparseable file to processed folder to prevent infinite retry loops.`);
+      } catch (moveErr) {}
+    }
     return;
   }
 
@@ -2114,6 +2663,7 @@ function processSingleMaterialFile(params) {
   vLog(`  - [CORE] Parsed Company Target: "${companyName}" | Resolved Job ID: "${jobId}"`);
 
   if (jobId && processedJobIds.has(jobId)) {
+    RUN_METRICS.filesSkipped++;
     vLog(`  - [CORE] Record match: Job ID ${jobId} was already successfully executed. Skipping duplicates.`);
     if (shouldMoveSourceFile) {
       file.moveTo(processedFolder);
@@ -2132,6 +2682,7 @@ function processSingleMaterialFile(params) {
       APPLICATION_DRAFT_MODE !== 'OFF' &&
       !discoveryResult.shouldCreateDraft
     ) {
+      RUN_METRICS.routesUnresolved++;
       appendToSpreadsheetLog({
         status: LOG_STATUS_NO_DRAFTABLE_ROUTE,
         company: companyName,
@@ -2144,7 +2695,14 @@ function processSingleMaterialFile(params) {
         jobUrl: getMetadataValue(metadata, 'Job URL')
       }, config);
       hasLoggedFailure = true;
-      throw new Error('No draftable email route found under strict discovery requirement. Source file retained for retry.');
+
+      if (ARCHIVE_UNRESOLVED_FILES) {
+        shouldMoveSourceFile = true;
+        if (jobId) processedJobIds.add(jobId);
+        vLog('  - [CORE] Archiving file with no draftable route to prevent continuous re-query loops.');
+      }
+
+      throw new Error('No draftable email route found under strict discovery requirement.');
     }
 
     // Use LLM-extracted address, fallback to manual file, fallback to standalone LLM call
@@ -2166,10 +2724,20 @@ function processSingleMaterialFile(params) {
     const jobUrl = getMetadataValue(metadata, 'Job URL');
     let linkedInFile = null;
     if (jobUrl) {
-      linkedInFile = generateLinkedInDoc(targetFolder, metadata, jobUrl);
+      linkedInFile = generateLinkedInDoc(targetFolder, metadata, jobUrl, config);
     } else {
       vLog(`  - [CORE] [WARNING] Job URL parameter missing. Bypassing LinkedIn Doc generation.`);
     }
+
+    // Render application package artifacts (Resume PDF, Cover Letter PDF, LinkedIn .desktop) into TARGET_FOLDER_ID_RENDER
+    const renderedArtifacts = renderApplicationPackage({
+      targetRenderFolder: resolvedTargetRenderFolder,
+      resumeFile: newResumeFile,
+      coverFile: coverDocResult.file,
+      metadata,
+      jobUrl,
+      config
+    });
     
     associateApplicationEmailDiscovery(metadata, discoveryResult);
     
@@ -2177,6 +2745,18 @@ function processSingleMaterialFile(params) {
     const filesToAnnotate = [newResumeFile, coverDocResult.file];
     if (linkedInFile) {
       filesToAnnotate.push(linkedInFile);
+    }
+    if (renderedArtifacts && renderedArtifacts.resumePdfFile) {
+      filesToAnnotate.push(renderedArtifacts.resumePdfFile);
+    }
+    if (renderedArtifacts && renderedArtifacts.coverPdfFile) {
+      filesToAnnotate.push(renderedArtifacts.coverPdfFile);
+    }
+    if (renderedArtifacts && renderedArtifacts.desktopFile) {
+      filesToAnnotate.push(renderedArtifacts.desktopFile);
+    }
+    if (renderedArtifacts && renderedArtifacts.packageFolder) {
+      filesToAnnotate.push(renderedArtifacts.packageFolder);
     }
     annotateGeneratedFilesWithApplicationEmail(filesToAnnotate, metadata, discoveryResult);
 
@@ -2203,8 +2783,12 @@ function processSingleMaterialFile(params) {
         jobUrl: getMetadataValue(metadata, 'Job URL')
       }, config);
       
+      RUN_METRICS.filesProcessed++;
+      if (jobId) processedJobIds.add(jobId);
+      shouldMoveSourceFile = true;
       vLog(`  - 🚀 Dispatch loop successfully finalized: ${dispatchResult.isSent ? 'SENT' : 'DRAFTED'} to ${dispatchResult.targetEmails.length} recipients.`);
     } else {
+      RUN_METRICS.routesUnresolved++;
       vLog(`  - 🛑 Routing criteria validation failed. Dispatch bypass active.`);
       appendToSpreadsheetLog({
         status: LOG_STATUS_NO_DRAFTABLE_ROUTE,
@@ -2217,6 +2801,10 @@ function processSingleMaterialFile(params) {
         messageId: '',
         jobUrl: getMetadataValue(metadata, 'Job URL')
       }, config);
+      if (ARCHIVE_UNRESOLVED_FILES) {
+        shouldMoveSourceFile = true;
+        if (jobId) processedJobIds.add(jobId);
+      }
     }
 
   } catch (e) {
@@ -2238,6 +2826,10 @@ function processSingleMaterialFile(params) {
     if (isSuppressedBounce) {
       vLog(`  - [CORE] Archiving file since retry will not bypass bounce suppression store.`);
       shouldMoveSourceFile = true;
+      if (jobId) processedJobIds.add(jobId);
+    } else if (ARCHIVE_UNRESOLVED_FILES && e.message && e.message.includes('No draftable email route found')) {
+      shouldMoveSourceFile = true;
+      if (jobId) processedJobIds.add(jobId);
     } else {
       shouldMoveSourceFile = false;
     }
@@ -2389,25 +2981,27 @@ function replaceAllLiteralText(body, literal, replacement) {
     
     if (replacement !== '') {
       vLog(`[REPLACE ENGINE] Replacing bracket marker "${literal}" with replacement text...`);
-      // "Trojan Horse" insertion: Insert the new text *inside* the placeholder.
-      // By inserting after the first character, we force Google Docs to inherit 
-      // the exact formatting of the placeholder, completely bypassing hidden 
-      // newline or paragraph styles that corrupt index 0 insertions.
-      el.insertText(start + 1, replacement);
-      
-      // Delete the first character of the original placeholder
-      el.deleteText(start, start);
-      
-      // Delete the rest of the original placeholder (if it was longer than 1 char)
-      if (end > start) {
-        el.deleteText(start + replacement.length, end + replacement.length - 1);
+      if (!replacement.includes('\n')) {
+        // "Trojan Horse" insertion: Insert the new text *inside* the placeholder.
+        // By inserting after the first character, we force Google Docs to inherit 
+        // the exact formatting of the placeholder, completely bypassing hidden 
+        // newline or paragraph styles that corrupt index 0 insertions.
+        el.insertText(start + 1, replacement);
+        el.deleteText(start, start);
+        if (end > start) {
+          el.deleteText(start + replacement.length, end + replacement.length - 1);
+        }
+      } else {
+        // Multiline replacement: replace placeholder range directly to prevent paragraph split offset errors
+        el.deleteText(start, end);
+        el.insertText(start, replacement);
       }
     } else {
       vLog(`[REPLACE ENGINE] Cleaning empty placeholder key: "${literal}"`);
       el.deleteText(start, end);
     }
     
-    searchResult = body.findText(escapeRegex(literal), searchResult);
+    searchResult = body.findText(escapeRegex(literal));
   }
 }
 
@@ -2450,19 +3044,6 @@ function escapeHtml(text) {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;');
-}
-
-function scheduleDeployMaterialsContinuationTrigger() {
-  const now = Date.now();
-  const props = PropertiesService.getScriptProperties();
-  const priorTs = Number(props.getProperty(CONTINUATION_TRIGGER_GUARD_PROP) || 0);
-  if (priorTs > 0 && (now - priorTs) < CONTINUATION_TRIGGER_GUARD_WINDOW_MS) {
-    vLog('[ORCHESTRATOR] Continuation trigger was recently scheduled. Skipping duplicate creation.');
-    return;
-  }
-  ScriptApp.newTrigger('deployMaterials').timeBased().after(CONTINUATION_TRIGGER_DELAY_MS).create();
-  props.setProperty(CONTINUATION_TRIGGER_GUARD_PROP, String(now));
-  vLog(`[ORCHESTRATOR] Continuation trigger created (delay ${CONTINUATION_TRIGGER_DELAY_MS} ms).`);
 }
 
 function getTodaysDateString() {

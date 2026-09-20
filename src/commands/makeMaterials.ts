@@ -4,8 +4,17 @@ import * as path from "node:path";
 import type { Argv } from "yargs";
 import { z } from "zod";
 import { writeArtifactManifest } from "../artifactManifest";
-import { type LLMRequest, llmService } from "../llmService";
+import {
+	type LLMRequest,
+	PathologicalReasoningRepetitionError,
+	llmService,
+} from "../llmService";
 import type { JobInterface } from "../models";
+import {
+	abortableDelay,
+	rethrowIfCancelled,
+	throwIfCancelled,
+} from "../pipelineCancellation";
 import {
 	loadAndReplacePromptTemplate,
 	loadPresets,
@@ -13,7 +22,6 @@ import {
 } from "../presets";
 import {
 	getDataDirectory,
-	getLogsDirectory,
 	getMaterialsDirectory,
 	getProfileFile,
 } from "../runtimePaths";
@@ -28,18 +36,11 @@ import {
 	type StatisticsCollector,
 	createStatisticsCollector,
 } from "../statistics";
-import type { GlobalArgs, Preset } from "../types";
+import type { GlobalArgs, OpenRouterProviderRouting, Preset } from "../types";
 import { getPreset } from "../types";
-import {
-	closeFileLogging,
-	createLogger,
-	formatDate,
-	initializeFileLogging,
-	log,
-} from "../utils";
-import { sleepWithJitter } from "../utils/delayUtils";
+import { createLogger, formatDate, log } from "../utils";
+import { createProgressReporter } from "../utils/progress";
 import { loadApplicationData } from "../utils/sharedCommandUtils";
-import { withSpinner } from "../utils/spinner";
 
 const logger = createLogger("MakeMaterials");
 
@@ -180,8 +181,14 @@ class MaterialsService {
 		return this.appData;
 	}
 
-	public async generateMaterials(llmRequest: LLMRequest): Promise<unknown> {
-		return await llmService.call(llmRequest);
+	public async generateMaterials(
+		llmRequest: LLMRequest,
+		signal?: AbortSignal,
+	): Promise<unknown> {
+		return await llmService.call(llmRequest, {
+			payloadLogStage: "makeMaterials",
+			...(signal ? { signal } : {}),
+		});
 	}
 }
 
@@ -204,9 +211,6 @@ export interface RunResumeOptimizationArgs {
 	sleepMin?: number;
 	sleepMax?: number;
 	maxRetries?: number;
-	disableFileLogging?: boolean;
-	logDir?: string;
-	logFile?: string;
 	jitter?: boolean;
 	showReasoningTokens?: boolean;
 	hideReasoningTokens?: boolean;
@@ -215,8 +219,32 @@ export interface RunResumeOptimizationArgs {
 	reasoningEffort?: string;
 	"mm-reasoning-effort"?: string;
 	"reasoning-effort"?: string;
-	logPayload?: boolean;
-	"log-payload"?: boolean;
+	providerRouting?: OpenRouterProviderRouting;
+	signal?: AbortSignal;
+}
+
+function serializeJobForMaterials(jobData: JobInterface): string {
+	const { isRemote: _isRemote, ...materialsBoundJob } = jobData;
+	return JSON.stringify(materialsBoundJob, null, 2);
+}
+
+function sanitizeDirectJobDescriptionForMaterials(
+	jobDescription: string,
+): string {
+	try {
+		const parsed: unknown = JSON.parse(jobDescription);
+		if (
+			!parsed ||
+			typeof parsed !== "object" ||
+			Array.isArray(parsed) ||
+			!("isRemote" in parsed)
+		) {
+			return jobDescription;
+		}
+		return serializeJobForMaterials(parsed as JobInterface);
+	} catch {
+		return jobDescription;
+	}
 }
 
 /**
@@ -230,6 +258,7 @@ export async function runResumeOptimizationMode(
 		args.reasoningEffort ??
 		args["mm-reasoning-effort"] ??
 		args["reasoning-effort"];
+	throwIfCancelled(args.signal);
 	const effectiveReasoningEffort =
 		typeof rawReasoningEffort === "string" &&
 		rawReasoningEffort.trim().length > 0
@@ -240,6 +269,14 @@ export async function runResumeOptimizationMode(
 		preset: effectivePreset.name,
 		...(effectiveReasoningEffort
 			? { reasoning_effort: effectiveReasoningEffort }
+			: {}),
+		...(args.providerRouting?.only?.length
+			? { "mm-provider": args.providerRouting.only.join(",") }
+			: {}),
+		...(args.providerRouting?.quantizations?.length
+			? {
+					"mm-provider-quant": args.providerRouting.quantizations.join(","),
+				}
 			: {}),
 	});
 
@@ -274,10 +311,13 @@ export async function runResumeOptimizationMode(
 
 		if (args.targJD) {
 			// Single JD provided via CLI
-			jobDescriptions = [args.targJD];
+			const materialsJobDescription = sanitizeDirectJobDescriptionForMaterials(
+				args.targJD,
+			);
+			jobDescriptions = [materialsJobDescription];
 			jobMetadata = [
 				{
-					targJD: args.targJD,
+					targJD: materialsJobDescription,
 					myProfessionalTitle,
 					myProfessionalSummary,
 					myKeySkills,
@@ -302,12 +342,14 @@ export async function runResumeOptimizationMode(
 					args.stats?.incrementCounter("files.read", 1);
 					args.stats?.incrementCounter("data.filesProcessed", 1);
 					const jobData: JobInterface = JSON.parse(fileContent);
+					const materialsJobDescription = serializeJobForMaterials(jobData);
 
-					// Insert entire contents of the JSON JD file into the outbound LLM payload
-					jobDescriptions.push(JSON.stringify(jobData, null, 2));
+					// Insert the job into the outbound LLM payload without internal
+					// remote-classification metadata.
+					jobDescriptions.push(materialsJobDescription);
 
 					jobMetadata.push({
-						targJD: JSON.stringify(jobData, null, 2),
+						targJD: materialsJobDescription,
 						myProfessionalTitle,
 						myProfessionalSummary,
 						myKeySkills,
@@ -364,6 +406,13 @@ export async function runResumeOptimizationMode(
 			effectivePreset.modelId,
 		);
 		const processedJobIds = new Set(existingCheckpoint?.processedJobIds ?? []);
+		const materialsProgress = createProgressReporter(logger, {
+			label: "Stage 7/8: MakeMaterials",
+			unitLabel: "job",
+			totalUnits: jobDescriptions.length,
+			maxUpdates: Math.max(1, jobDescriptions.length),
+		});
+		materialsProgress.start({ preset: effectivePreset.name });
 
 		if (existingCheckpoint && existingCheckpoint.status === "completed") {
 			log(
@@ -371,6 +420,12 @@ export async function runResumeOptimizationMode(
 				`Durable checkpoint match: makeMaterials already completed for current jobs with preset ${effectivePreset.name}.`,
 				"info",
 			);
+			for (let i = 0; i < jobDescriptions.length; i++) {
+				materialsProgress.complete(
+					{ jobIndex: i + 1, outcome: "checkpoint-reused" },
+					{ suffix: "durable checkpoint reused" },
+				);
+			}
 			return { content: [] };
 		}
 
@@ -390,6 +445,7 @@ export async function runResumeOptimizationMode(
 		const allResults: Record<string, unknown>[] = [];
 
 		for (let i = 0; i < jobDescriptions.length; i++) {
+			throwIfCancelled(args.signal);
 			const jobDescription = jobDescriptions[i];
 			const jobMeta = jobMetadata[i];
 
@@ -403,6 +459,14 @@ export async function runResumeOptimizationMode(
 					"MakeMaterials",
 					`Skipping already generated materials for ${jobIdentityKey} from durable checkpoint.`,
 					"info",
+				);
+				materialsProgress.complete(
+					{
+						jobIndex: i + 1,
+						jobTitle: jobMeta.jobTitle,
+						outcome: "checkpoint-skipped",
+					},
+					{ suffix: "durable checkpoint reused" },
 				);
 				continue;
 			}
@@ -463,29 +527,10 @@ export async function runResumeOptimizationMode(
 				...(effectiveReasoningEffort !== undefined
 					? { reasoning_effort: effectiveReasoningEffort }
 					: {}),
+				...(args.providerRouting
+					? { providerRouting: args.providerRouting }
+					: {}),
 			};
-
-			if (
-				args.logPayload ||
-				(args as unknown as Record<string, unknown>)["log-payload"]
-			) {
-				const logDir = args.logDir || getLogsDirectory();
-				await fs.promises.mkdir(logDir, { recursive: true });
-				const payloadFile = path.join(
-					logDir,
-					`makematerials_${String(jobMeta.jobTitle || `job_${i + 1}`).replace(/[^a-zA-Z0-9]/g, "_")}_payload_${timestamp}.json`,
-				);
-				await fs.promises.writeFile(
-					payloadFile,
-					JSON.stringify(llmRequest, null, 2),
-					{ encoding: "utf-8", mode: 0o600 },
-				);
-				log(
-					"MakeMaterials",
-					`Outbound LLM payload saved to: ${payloadFile}`,
-					"info",
-				);
-			}
 
 			if (args.verbose) {
 				log("MakeMaterials", "LLM Request Payload:", "debug", {
@@ -499,20 +544,16 @@ export async function runResumeOptimizationMode(
 			args.stats?.incrementCounter("network.connections", 1);
 			let result: { content: string };
 			try {
-				result = (await withSpinner(
-					`Waiting for LLM response for "${String(jobMeta.jobTitle || `job ${i + 1}`)}" (${i + 1}/${jobDescriptions.length})...`,
-					() => service.generateMaterials(llmRequest),
-					{
-						enabled:
-							!llmRequest.showReasoningTokens && !llmRequest.showResponseStream,
-					},
-				)) as { content: string };
+				result = (await service.generateMaterials(llmRequest, args.signal)) as {
+					content: string;
+				};
 				args.stats?.incrementCounter("api.successfulCalls", 1);
 				args.stats?.recordHistogram(
 					"api.responseTime",
 					performance.now() - apiStartedAt,
 				);
 			} catch (error) {
+				rethrowIfCancelled(error, args.signal);
 				args.stats?.incrementCounter("api.failedCalls", 1);
 				args.stats?.recordHistogram(
 					"api.responseTime",
@@ -521,6 +562,14 @@ export async function runResumeOptimizationMode(
 				const message = error instanceof Error ? error.message : String(error);
 				if (/timeout|timed out/i.test(message)) {
 					args.stats?.incrementCounter("network.timeouts", 1);
+				}
+				if (
+					error instanceof PathologicalReasoningRepetitionError ||
+					(error as { name?: string })?.name ===
+						"PathologicalReasoningRepetitionError" ||
+					/pathological reasoning repetition/i.test(message)
+				) {
+					args.stats?.incrementCounter("api.repetitionErrors", 1);
 				}
 				throw error;
 			}
@@ -531,9 +580,9 @@ export async function runResumeOptimizationMode(
 			// Create job-specific output directory from the parsed filename
 			const resumeFilename =
 				parsedMaterials["Resume Filename"] ||
-				`Candidate_Materials_Fallback_${timestamp}`;
+				`Alex_Morgan_Materials_Fallback_${timestamp}`;
 			const safeJobTitleForDir = resumeFilename
-				.replace("Candidate_Materials_", "")
+				.replace(/^[A-Za-z0-9_-]+_Materials_/, "")
 				.replace(/[^a-zA-Z0-9]/g, "_");
 			const jobOutputDir = path.join(
 				materialsDir,
@@ -634,6 +683,12 @@ ${parsedMaterials["Optimized & Tailored Cover Letter"] || "Cover letter not gene
 				logInfo,
 			);
 			allResults.push(logInfo);
+			materialsProgress.complete({
+				jobIndex: i + 1,
+				jobTitle,
+				company: jobCompany,
+				outcome: "generated",
+			});
 
 			if (args.verbose) {
 				logger.success(`Generated materials for: ${jobMeta.jobTitle}`, {
@@ -664,7 +719,9 @@ ${parsedMaterials["Optimized & Tailored Cover Letter"] || "Cover letter not gene
 							totalJobs: jobDescriptions.length,
 						},
 					);
-					await sleepWithJitter(sleepMin, sleepMax);
+					const jitterDelayMs =
+						(sleepMin + Math.random() * (sleepMax - sleepMin)) * 1000;
+					await abortableDelay(jitterDelayMs, args.signal);
 				} else {
 					// Use fixed sleep duration
 					sleepDuration = args.sleep ?? fallbackSleep;
@@ -679,11 +736,12 @@ ${parsedMaterials["Optimized & Tailored Cover Letter"] || "Cover letter not gene
 							totalJobs: jobDescriptions.length,
 						},
 					);
-					await new Promise((res) => setTimeout(res, sleepDuration * 1000));
+					await abortableDelay(sleepDuration * 1000, args.signal);
 				}
 			}
 		}
 
+		throwIfCancelled(args.signal);
 		repo.completeStageCheckpoint(
 			"makeMaterials",
 			batchInputSignature,
@@ -699,6 +757,7 @@ ${parsedMaterials["Optimized & Tailored Cover Letter"] || "Cover letter not gene
 		});
 		return { content: allResults };
 	} catch (error) {
+		rethrowIfCancelled(error, args.signal);
 		return { content: [], error };
 	}
 }
@@ -712,14 +771,6 @@ async function handleResumeOptimizationCommand(argv: unknown): Promise<void> {
 	stats.startCollection();
 
 	const startTime = performance.now();
-
-	if (!(argv as Record<string, unknown>).disableFileLogging) {
-		const logDir = String(
-			(argv as Record<string, unknown>)["log-dir"] ?? "./logs",
-		);
-		const logFile = `${formatDate(new Date(), "yyyyMMdd_HHmmss")}_make_materials.log`;
-		initializeFileLogging(logDir, logFile, "makeMaterials");
-	}
 
 	try {
 		// Load all presets
@@ -838,8 +889,6 @@ async function handleResumeOptimizationCommand(argv: unknown): Promise<void> {
 		// Always end statistics collection
 		const summary = stats.endCollection();
 		log("MakeMaterials", "Final statistics:", "info", { summary });
-
-		await closeFileLogging();
 	}
 }
 
@@ -974,12 +1023,6 @@ export function addMakeMaterialsCommands(
 					type: "boolean",
 					description:
 						"Display detailed processing information and debug output",
-					default: false,
-				})
-				.option("log-payload", {
-					type: "boolean",
-					description:
-						"Save sensitive outbound LLM payload to ./logs (owner-readable only).",
 					default: false,
 				})
 				.option("show-reasoning", {

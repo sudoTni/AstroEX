@@ -21,7 +21,7 @@ export function getDataDirectory(): string {
 }
 
 export function getProfileDirectory(): string {
-	return configuredDirectory("ASTROEX_PROFILE_DIR", "profile");
+	return configuredDirectory("ASTROEX_PROFILE_DIR", "profile.example");
 }
 
 export function getLogsDirectory(): string {

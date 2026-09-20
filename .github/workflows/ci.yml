@@ -17,17 +17,13 @@ jobs:
         with:
           node-version: 22.x
           cache: npm
-      - name: Install rclone for deployment integration tests
-        run: |
-          sudo apt-get update
-          sudo apt-get install --yes --no-install-recommends rclone
       - run: npm ci --ignore-scripts
       - run: npm run typecheck
       - run: npm test
       - run: npm run audit
       - run: |
           npm pack --dry-run --json > pack.json
-          node -e 'const raw=require("./pack.json"); const entry=Array.isArray(raw)?raw[0]:(raw.astroex??raw); const privatePath=/^(data|logs|materials|materials-deployed|profile|test)\//; if ((entry.files||[]).some(({path}) => privatePath.test(path))) process.exit(1)'
+          node -e 'const raw=require("./pack.json"); const entry=Array.isArray(raw)?raw[0]:(raw.astroex??raw); const privatePath=/^(data|logs|materials|materials-deployed|profile|personal_data|test)\//; if ((entry.files||[]).some(({path}) => privatePath.test(path))) process.exit(1)'
       - run: |
           npm pack --pack-destination "$RUNNER_TEMP"
           mkdir "$RUNNER_TEMP/astroex-package-smoke"

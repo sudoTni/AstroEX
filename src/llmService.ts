@@ -14,20 +14,42 @@
  * - Batch processing with concurrency control
  * - Comprehensive error handling and retry logic
  *
- * @author AstroEX Contributors
+ * @author tjenkel
  * @license MIT
  * @since 2.0.0
  */
 
+import { AsyncLocalStorage } from "node:async_hooks";
+import { randomUUID } from "node:crypto";
 import { OpenAI } from "openai";
 // import { GoogleGenerativeAI } from "@google/generative-ai";
 // import { Mistral } from "@mistralai/mistralai";
 import { z } from "zod";
 import { type CircuitBreaker, CircuitBreakerFactory } from "./circuitBreaker";
+import { stripAnsi } from "./logging/fader";
+import {
+	type LlmPayloadLogStage,
+	writeLlmPayloadLog,
+} from "./logging/payloadLogs";
+import {
+	OpenRouterCallUsageSchema,
+	type OpenRouterUsageTracker,
+	formatUsd,
+	parseOpenRouterUsage,
+} from "./openRouterUsage";
+import { abortableDelay } from "./pipelineCancellation";
+import {
+	PathologicalReasoningRepetitionError,
+	type RepetitionErrorDetails,
+	type RepetitionMatch,
+	StreamRepetitionDetector,
+} from "./repetitionDetector";
+import type { StatisticsCollector } from "./statistics";
 import type { AIProviderConfig, PerformanceMetrics } from "./types";
 import {
 	AppError,
 	type LegacyLogLevel,
+	type LogGradientKey,
 	applyHsvFade,
 	createLogger,
 	createStreamFader,
@@ -40,6 +62,16 @@ import {
 } from "./utils";
 
 const logger = createLogger("LLMService");
+
+function writeLiveStreamStart(label: string, gradient: LogGradientKey): void {
+	const header = applyHsvFade(`\n╭─ [${label}]`, gradient, { bold: true });
+	const border = applyHsvFade("│ ", gradient);
+	process.stdout.write(`${header}\n${border}`);
+}
+
+function writeLiveStreamEnd(gradient: LogGradientKey): void {
+	process.stdout.write(applyHsvFade("\n╰─\n", gradient));
+}
 
 // Pre-compiled regex patterns for better performance
 const _COMPILED_REGEX_PATTERNS = {
@@ -163,9 +195,41 @@ const LLMRequestSchema = z.object({
 	hideReasoningTokens: z.boolean().optional(),
 	showResponseStream: z.boolean().optional(),
 	reasoning_effort: z.string().optional(),
+	providerRouting: z
+		.object({
+			only: z.array(z.string().trim().min(1)).min(1).optional(),
+			ignore: z.array(z.string().trim().min(1)).min(1).optional(),
+			quantizations: z.array(z.string().trim().min(1)).min(1).optional(),
+		})
+		.refine(
+			(val) =>
+				Boolean(
+					val.only?.length || val.ignore?.length || val.quantizations?.length,
+				),
+			{
+				message:
+					"providerRouting must contain at least one of 'only', 'ignore', or 'quantizations'",
+			},
+		)
+		.optional(),
 });
 
 export type LLMRequest = z.infer<typeof LLMRequestSchema>;
+
+export interface LLMCallOptions {
+	payloadLogStage?: LlmPayloadLogStage;
+	signal?: AbortSignal;
+	stats?: StatisticsCollector;
+	maxRepetitionRetries?: number;
+	disableRepetitionDetection?: boolean;
+}
+
+export {
+	PathologicalReasoningRepetitionError,
+	StreamRepetitionDetector,
+	type RepetitionErrorDetails,
+	type RepetitionMatch,
+};
 
 // Schema for LLM response
 const LLMResponseSchema = z.object({
@@ -181,6 +245,8 @@ const LLMResponseSchema = z.object({
 	}),
 	duration: z.number(),
 	timestamp: z.string(),
+	requestId: z.string().optional(),
+	billingUsage: OpenRouterCallUsageSchema.optional(),
 	finishReason: z.string().optional(),
 	reasoningContent: z.string().optional(),
 });
@@ -193,6 +259,26 @@ type ReasoningFields = {
 	reasoning?: string | null;
 	thinking?: string | null;
 };
+
+type OpenRouterProviderPayload = {
+	provider?: {
+		only?: string[];
+		ignore?: string[];
+		quantizations?: string[];
+	};
+};
+
+class OpenRouterUsageUnavailableError extends Error {
+	constructor(
+		message: string,
+		readonly requestId?: string,
+		readonly model?: string,
+		readonly stage?: string,
+	) {
+		super(message);
+		this.name = "OpenRouterUsageUnavailableError";
+	}
+}
 
 // Schema for batch processing
 const BatchRequestSchema = z.object({
@@ -218,6 +304,16 @@ export class LLMService {
 	private successCount = 0;
 	private failureCount = 0;
 	private circuitBreakers: Map<string, CircuitBreaker> = new Map();
+	private readonly usageTrackingContext =
+		new AsyncLocalStorage<OpenRouterUsageTracker>();
+
+	/** Run an operation with usage accounting isolated to its async call tree. */
+	runWithUsageTracker<T>(
+		tracker: OpenRouterUsageTracker,
+		operation: () => Promise<T>,
+	): Promise<T> {
+		return this.usageTrackingContext.run(tracker, operation);
+	}
 
 	private getRequestBudget(): number | undefined {
 		const value = process.env.ASTROEX_MAX_LLM_REQUESTS;
@@ -567,8 +663,13 @@ export class LLMService {
 	 * @param request LLM request configuration
 	 * @returns Promise<LLMResponse>
 	 */
-	async call(request: LLMRequest): Promise<LLMResponse> {
+	async call(
+		request: LLMRequest,
+		options: LLMCallOptions = {},
+	): Promise<LLMResponse> {
 		const startTime = performance.now();
+		const usageTracker = this.usageTrackingContext.getStore();
+		const usageAccountingId = usageTracker ? randomUUID() : undefined;
 		const deadline = this.getRunDeadlineMs();
 		if (deadline !== undefined && Date.now() - this.runStartedAt >= deadline) {
 			throw new Error(
@@ -586,6 +687,19 @@ export class LLMService {
 		try {
 			// Validate request
 			const validatedRequest = LLMRequestSchema.parse(request);
+			if (options.payloadLogStage) {
+				// Preserve the historical ANSI-free behavior of the three logged stages
+				// without coupling request normalization to file serialization.
+				validatedRequest.model = stripAnsi(validatedRequest.model);
+				for (const message of validatedRequest.messages) {
+					message.content = stripAnsi(message.content);
+				}
+				if (validatedRequest.reasoning_effort !== undefined) {
+					validatedRequest.reasoning_effort = stripAnsi(
+						validatedRequest.reasoning_effort,
+					);
+				}
+			}
 			if (
 				validatedRequest.hideReasoningTokens ||
 				process.env.ASTROEX_HIDE_REASONING === "1"
@@ -641,6 +755,10 @@ export class LLMService {
 					validatedRequest.reasoning_effort !== ""
 						? { reasoning_effort: validatedRequest.reasoning_effort }
 						: {}),
+					...(validatedRequest.provider === "openrouter" &&
+					validatedRequest.providerRouting
+						? { providerRouting: validatedRequest.providerRouting }
+						: {}),
 				});
 				logger.debug(`\n${formattedReq}`);
 			} else {
@@ -656,11 +774,87 @@ export class LLMService {
 						validatedRequest.reasoning_effort !== ""
 							? { reasoning_effort: validatedRequest.reasoning_effort }
 							: {}),
+						...(validatedRequest.provider === "openrouter" &&
+						validatedRequest.providerRouting
+							? {
+									...(validatedRequest.providerRouting.only?.length
+										? {
+												"provider.only":
+													validatedRequest.providerRouting.only.join(","),
+											}
+										: {}),
+									...(validatedRequest.providerRouting.ignore?.length
+										? {
+												"provider.ignore":
+													validatedRequest.providerRouting.ignore.join(","),
+											}
+										: {}),
+									...(validatedRequest.providerRouting.quantizations?.length
+										? {
+												"provider.quantizations":
+													validatedRequest.providerRouting.quantizations.join(
+														",",
+													),
+											}
+										: {}),
+								}
+							: {}),
 					},
 				);
 			}
 
-			const response = await this.makeProviderCall(provider, validatedRequest);
+			const response = await this.makeProviderCall(
+				provider,
+				validatedRequest,
+				options,
+			);
+			if (
+				usageTracker &&
+				usageAccountingId &&
+				validatedRequest.provider === "openrouter"
+			) {
+				if (response.billingUsage) {
+					const recorded = usageTracker.record(
+						usageAccountingId,
+						response.billingUsage,
+					);
+					if (recorded.recorded) {
+						const usage = response.billingUsage;
+						logger.info(
+							`OpenRouter usage recorded: input=${usage.inputTokens}, output=${usage.outputTokens}, total=${usage.totalTokens}, cost=${formatUsd(usage.costUsd)}; pipeline total=${recorded.totals.totalTokens} tokens, ${formatUsd(recorded.totals.costUsd)}`,
+							{
+								event: "openrouter.usage.call",
+								callNumber: recorded.callNumber,
+								...(usage.requestId ? { requestId: usage.requestId } : {}),
+								model: usage.model ?? validatedRequest.model,
+								...(usage.stage ? { stage: usage.stage } : {}),
+								inputTokens: usage.inputTokens,
+								outputTokens: usage.outputTokens,
+								totalTokens: usage.totalTokens,
+								costUsd: usage.costUsd,
+								pipelineInputTokens: recorded.totals.inputTokens,
+								pipelineOutputTokens: recorded.totals.outputTokens,
+								pipelineTotalTokens: recorded.totals.totalTokens,
+								pipelineCostUsd: recorded.totals.costUsd,
+							},
+						);
+					}
+				} else {
+					const totals = usageTracker.markUsageUnavailable();
+					logger.warn(
+						"OpenRouter response completed without complete authoritative usage; pipeline totals exclude this call.",
+						{
+							event: "openrouter.usage.unavailable",
+							model: validatedRequest.model,
+							...(response.requestId ? { requestId: response.requestId } : {}),
+							...(options.payloadLogStage
+								? { stage: options.payloadLogStage }
+								: {}),
+							unavailableUsageCalls: totals.unavailableUsageCalls,
+						},
+					);
+				}
+			}
 			const endTime = performance.now();
 			const duration = endTime - startTime;
 
@@ -727,9 +921,42 @@ export class LLMService {
 
 			return { ...response, content: parsedContent };
 		} catch (error: unknown) {
+			if (options.signal?.aborted) {
+				throw options.signal.reason instanceof Error
+					? options.signal.reason
+					: error;
+			}
+
+			if (
+				error instanceof PathologicalReasoningRepetitionError ||
+				(error as { name?: string })?.name ===
+					"PathologicalReasoningRepetitionError"
+			) {
+				options.stats?.incrementCounter("api.repetitionErrors", 1);
+			}
+
 			const endTime = performance.now();
 			const duration = endTime - startTime;
 			this.failureCount++;
+			if (
+				usageTracker &&
+				request.provider === "openrouter" &&
+				error instanceof OpenRouterUsageUnavailableError
+			) {
+				const totals = usageTracker.markUsageUnavailable();
+				logger.warn(
+					"OpenRouter response completed without usage metadata; pipeline totals exclude this call.",
+					{
+						event: "openrouter.usage.unavailable",
+						...(error.model || request.model
+							? { model: error.model ?? request.model }
+							: {}),
+						...(error.requestId ? { requestId: error.requestId } : {}),
+						...(error.stage ? { stage: error.stage } : {}),
+						unavailableUsageCalls: totals.unavailableUsageCalls,
+					},
+				);
+			}
 
 			const errorMessage =
 				error instanceof Error ? error.message : String(error);
@@ -1032,7 +1259,10 @@ export class LLMService {
 	 * @param batchRequest Batch request configuration
 	 * @returns Promise<LLMResponse[]>
 	 */
-	async batch(batchRequest: BatchRequest): Promise<LLMResponse[]> {
+	async batch(
+		batchRequest: BatchRequest,
+		options: LLMCallOptions = {},
+	): Promise<LLMResponse[]> {
 		const { requests, concurrency, retryAttempts, retryDelay } =
 			BatchRequestSchema.parse(batchRequest);
 		const results: LLMResponse[] = [];
@@ -1055,7 +1285,13 @@ export class LLMService {
 			const batch = requests.slice(i, i + concurrency);
 			const batchPromises = batch.map(async (request, _index) => {
 				const attempt = 0;
-				return this.retryCall(request, retryAttempts, retryDelay, attempt);
+				return this.retryCall(
+					request,
+					retryAttempts,
+					retryDelay,
+					attempt,
+					options,
+				);
 			});
 
 			try {
@@ -1077,6 +1313,11 @@ export class LLMService {
 					}
 				});
 			} catch (error: unknown) {
+				if (options.signal?.aborted) {
+					throw options.signal.reason instanceof Error
+						? options.signal.reason
+						: error;
+				}
 				const errorMessage =
 					error instanceof Error ? error.message : String(error);
 				log("LLMService", `Batch processing error: ${errorMessage}`, "error", {
@@ -1119,6 +1360,7 @@ export class LLMService {
 		maxRetries: number,
 		retryDelay: number,
 		attempt: number,
+		options: LLMCallOptions,
 	): Promise<LLMResponse> {
 		const circuitBreaker = this.getCircuitBreaker(request.provider);
 
@@ -1130,7 +1372,7 @@ export class LLMService {
 		}
 
 		try {
-			const result = await this.call(request);
+			const result = await this.call(request, options);
 			return result;
 		} catch (error: unknown) {
 			// Error handling and retry backoff managed below
@@ -1157,7 +1399,13 @@ export class LLMService {
 				);
 
 				await new Promise((resolve) => setTimeout(resolve, actualDelay));
-				return this.retryCall(request, maxRetries, retryDelay, attempt + 1);
+				return this.retryCall(
+					request,
+					maxRetries,
+					retryDelay,
+					attempt + 1,
+					options,
+				);
 			}
 			log(
 				"LLMService",
@@ -1199,6 +1447,34 @@ export class LLMService {
 	}
 
 	/**
+	 * Log the exact provider request object, then pass that same object to the SDK.
+	 * Payload logging is best-effort and must never prevent the API request.
+	 */
+	private async sendProviderPayload<TPayload, TResponse>(
+		stage: LlmPayloadLogStage | undefined,
+		payload: TPayload,
+		send: (payload: TPayload) => Promise<TResponse>,
+	): Promise<TResponse> {
+		if (stage) {
+			try {
+				await writeLlmPayloadLog(stage, payload);
+			} catch (error) {
+				log(
+					"LLMService",
+					`Unable to write ${stage} LLM payload log; continuing with the request`,
+					"warn",
+					{
+						stage,
+						error: error instanceof Error ? error.message : String(error),
+					},
+				);
+			}
+		}
+
+		return send(payload);
+	}
+
+	/**
 	 * Make the actual provider-specific API call
 	 * @param provider Provider configuration
 	 * @param request LLM request configuration
@@ -1207,12 +1483,13 @@ export class LLMService {
 	private async makeProviderCall(
 		provider: AIProviderConfig,
 		request: LLMRequest,
+		options: LLMCallOptions,
 	): Promise<LLMResponse> {
 		switch (request.provider) {
 			case "openai":
 			case "openrouter":
 			case "cerebras": // Add cerebras here
-				return this.callOpenAI(provider, request);
+				return this.callOpenAI(provider, request, options);
 			case "gemini":
 				// Gemini integration requires @google/generative-ai package
 				return this.callGemini(provider, request);
@@ -1220,7 +1497,7 @@ export class LLMService {
 				// Mistral integration requires @mistralai/mistralai package
 				return this.callMistral(provider, request);
 			case "poe":
-				return this.callPOE(provider, request);
+				return this.callPOE(provider, request, options);
 			default:
 				throw new Error(`Unsupported provider: ${request.provider}`);
 		}
@@ -1235,6 +1512,7 @@ export class LLMService {
 	private async callOpenAI(
 		provider: AIProviderConfig,
 		request: LLMRequest,
+		options: LLMCallOptions,
 	): Promise<LLMResponse> {
 		const client = new OpenAI({
 			apiKey: provider.apiKey,
@@ -1242,15 +1520,40 @@ export class LLMService {
 		});
 
 		if (request.showReasoningTokens || request.showResponseStream) {
-			try {
-				const streamingParams: OpenAI.Chat.Completions.ChatCompletionCreateParamsStreaming =
-					{
+			const maxRepetitionRetries = Math.max(
+				0,
+				options.maxRepetitionRetries ?? 1,
+			);
+			const repetitionDetectionEnabled = !options.disableRepetitionDetection;
+
+			for (let attempt = 0; attempt <= maxRepetitionRetries; attempt++) {
+				const streamAbortController = new AbortController();
+				const repetitionDetector = repetitionDetectionEnabled
+					? new StreamRepetitionDetector()
+					: undefined;
+
+				const compositeSignal = options.signal
+					? AbortSignal.any([options.signal, streamAbortController.signal])
+					: streamAbortController.signal;
+
+				let printedReasoningHeader = false;
+				let printedResponseHeader = false;
+
+				try {
+					const shouldIncludeOpenRouterUsage =
+						request.provider === "openrouter" &&
+						this.usageTrackingContext.getStore() !== undefined;
+					const streamingParams: OpenAI.Chat.Completions.ChatCompletionCreateParamsStreaming &
+						OpenRouterProviderPayload = {
 						model: request.model,
 						messages: request.messages,
 						temperature: request.temperature,
 						top_p: request.topP,
 						max_tokens: request.maxTokens,
 						stream: true,
+						...(shouldIncludeOpenRouterUsage
+							? { stream_options: { include_usage: true } }
+							: {}),
 						...(request.provider === "openai" && request.responseSchema
 							? { response_format: { type: "json_object" } }
 							: {}),
@@ -1261,111 +1564,226 @@ export class LLMService {
 										request.reasoning_effort as unknown as OpenAI.Chat.Completions.ChatCompletionReasoningEffort,
 								}
 							: {}),
+						...(request.provider === "openrouter" && request.providerRouting
+							? { provider: request.providerRouting }
+							: {}),
 					};
 
-				const stream = await client.chat.completions.create(streamingParams);
-				let accumulatedContent = "";
-				const reasoningFader = createStreamFader("reasoning", {
-					cycleLength: 100,
-				});
-				const responseFader = createStreamFader("streaming", {
-					cycleLength: 120,
-				});
-				let printedReasoningHeader = false;
-				let printedResponseHeader = false;
+					const stream = await this.sendProviderPayload(
+						options.payloadLogStage,
+						streamingParams,
+						(payload) =>
+							client.chat.completions.create(payload, {
+								signal: compositeSignal,
+							}),
+					);
+					let accumulatedContent = "";
+					const reasoningFader = createStreamFader("reasoning", {
+						cycleLength: 100,
+					});
+					const responseFader = createStreamFader("streaming", {
+						cycleLength: 120,
+					});
+					let finalUsage: unknown;
+					let responseId: string | undefined;
+					let responseModel: string | undefined;
 
-				for await (const chunk of stream) {
-					const delta = chunk.choices[0]?.delta as ReasoningFields | undefined;
-					if (!delta) continue;
+					for await (const chunk of stream) {
+						if (options.signal?.aborted) throw options.signal.reason;
+						responseId ??= chunk.id;
+						responseModel ??= chunk.model;
+						const chunkUsage = (chunk as { usage?: unknown }).usage;
+						if (chunkUsage) finalUsage = chunkUsage;
+						const delta = chunk.choices[0]?.delta as
+							| ReasoningFields
+							| undefined;
+						if (!delta) continue;
 
-					const reasoningChunk =
-						delta.reasoning_content || delta.reasoning || delta.thinking;
+						const reasoningChunk =
+							delta.reasoning_content || delta.reasoning || delta.thinking;
 
-					if (request.showReasoningTokens && reasoningChunk) {
-						if (!printedReasoningHeader) {
-							const hdr = applyHsvFade("\n╭─ [Reasoning Stream]", "reasoning", {
-								bold: true,
-							});
-							process.stdout.write(`${hdr}\n│ `);
-							printedReasoningHeader = true;
-						}
-						process.stdout.write(reasoningFader.fadeChunk(reasoningChunk));
-					}
-
-					if (delta.content) {
-						accumulatedContent += delta.content;
-						if (request.showResponseStream) {
-							if (!printedResponseHeader) {
-								if (printedReasoningHeader) {
-									const closeReasoning = applyHsvFade("\n╰─", "reasoning");
-									process.stdout.write(`${closeReasoning}\n`);
-								}
-								const hdr = applyHsvFade(
-									"\n╭─ [Response Stream]",
-									"streaming",
-									{ bold: true },
+						if (reasoningChunk) {
+							if (repetitionDetector?.feed(reasoningChunk).detected) {
+								const error = repetitionDetector.createError(
+									request.provider,
+									request.model,
+									attempt + 1,
 								);
-								process.stdout.write(`${hdr}\n│ `);
-								printedResponseHeader = true;
+								logger.warn(
+									`Pathological reasoning repetition detected: period=${error.period}, repeats=${error.repeats}, snippet="${error.repeatedText.replace(/\n/g, "\\n")}". Aborting stream...`,
+									{
+										period: error.period,
+										repeats: error.repeats,
+										repeatedText: error.repeatedText,
+										totalChars: error.totalChars,
+										attempt: error.attempt,
+									},
+								);
+								if (printedReasoningHeader) {
+									writeLiveStreamEnd("reasoning");
+									printedReasoningHeader = false;
+								}
+								streamAbortController.abort(error);
+								throw error;
 							}
-							process.stdout.write(responseFader.fadeChunk(delta.content));
+
+							if (request.showReasoningTokens) {
+								if (!printedReasoningHeader) {
+									writeLiveStreamStart("Reasoning Stream", "reasoning");
+									printedReasoningHeader = true;
+								}
+								process.stdout.write(reasoningFader.fadeChunk(reasoningChunk));
+							}
+						}
+
+						if (delta.content) {
+							accumulatedContent += delta.content;
+							if (request.showResponseStream) {
+								if (!printedResponseHeader) {
+									if (printedReasoningHeader) {
+										writeLiveStreamEnd("reasoning");
+										printedReasoningHeader = false;
+									}
+									writeLiveStreamStart("Response Stream", "streaming");
+									printedResponseHeader = true;
+								}
+								process.stdout.write(responseFader.fadeChunk(delta.content));
+							}
 						}
 					}
-				}
 
-				if (printedResponseHeader) {
-					const closeStream = applyHsvFade("\n╰─\n", "streaming");
-					process.stdout.write(closeStream);
-				} else if (printedReasoningHeader) {
-					const closeReasoning = applyHsvFade("\n╰─\n", "reasoning");
-					process.stdout.write(closeReasoning);
-				}
+					if (printedResponseHeader) {
+						writeLiveStreamEnd("streaming");
+					} else if (printedReasoningHeader) {
+						writeLiveStreamEnd("reasoning");
+					}
 
-				if (accumulatedContent) {
-					return {
-						content: accumulatedContent,
-						provider: request.provider,
-						model: request.model,
-						usage: {
-							promptTokens: 0,
-							completionTokens: this.estimateTokenCount(accumulatedContent),
-							totalTokens: this.estimateTokenCount(accumulatedContent),
-						},
-						duration: 0,
-						timestamp: new Date().toISOString(),
-					};
+					if (accumulatedContent) {
+						const billingUsage =
+							request.provider === "openrouter"
+								? parseOpenRouterUsage(finalUsage, {
+										requestId: responseId,
+										model: responseModel ?? request.model,
+										stage: options.payloadLogStage,
+									})
+								: undefined;
+						const estimatedCompletionTokens =
+							this.estimateTokenCount(accumulatedContent);
+						return {
+							content: accumulatedContent,
+							provider: request.provider,
+							model: responseModel ?? request.model,
+							usage: {
+								promptTokens: billingUsage?.inputTokens ?? 0,
+								completionTokens:
+									billingUsage?.outputTokens ?? estimatedCompletionTokens,
+								totalTokens:
+									billingUsage?.totalTokens ?? estimatedCompletionTokens,
+							},
+							duration: 0,
+							timestamp: new Date().toISOString(),
+							...(responseId ? { requestId: responseId } : {}),
+							...(billingUsage ? { billingUsage } : {}),
+						};
+					}
+
+					// If stream completed without accumulatedContent, break attempt loop to allow fallback
+					break;
+				} catch (streamError) {
+					if (printedResponseHeader) {
+						writeLiveStreamEnd("streaming");
+						printedResponseHeader = false;
+					} else if (printedReasoningHeader) {
+						writeLiveStreamEnd("reasoning");
+						printedReasoningHeader = false;
+					}
+
+					if (options.signal?.aborted) {
+						throw options.signal.reason;
+					}
+
+					const isRepetitionError =
+						streamError instanceof PathologicalReasoningRepetitionError ||
+						(streamError as { name?: string })?.name ===
+							"PathologicalReasoningRepetitionError" ||
+						streamAbortController.signal.reason instanceof
+							PathologicalReasoningRepetitionError ||
+						(streamAbortController.signal.reason as { name?: string })?.name ===
+							"PathologicalReasoningRepetitionError";
+
+					if (isRepetitionError) {
+						const actualError =
+							streamError instanceof PathologicalReasoningRepetitionError
+								? streamError
+								: streamAbortController.signal.reason instanceof
+										PathologicalReasoningRepetitionError
+									? streamAbortController.signal.reason
+									: (streamError as Error);
+
+						if (attempt < maxRepetitionRetries) {
+							logger.warn(
+								`Retrying LLM stream after pathological reasoning repetition (attempt ${attempt + 1} of ${maxRepetitionRetries})...`,
+								{
+									attempt: attempt + 1,
+									maxRetries: maxRepetitionRetries,
+									provider: request.provider,
+									model: request.model,
+								},
+							);
+							await abortableDelay(1000, options.signal);
+							continue;
+						}
+						logger.error(
+							`Pathological reasoning repetition retries exhausted (${attempt + 1}/${maxRepetitionRetries + 1}). Aborting request.`,
+							{
+								attempt: attempt + 1,
+								provider: request.provider,
+								model: request.model,
+							},
+						);
+						throw actualError;
+					}
+
+					log(
+						"LLMService",
+						`Streaming error, falling back to non-streaming: ${streamError}`,
+						"warn",
+					);
+					break;
 				}
-			} catch (streamError) {
-				log(
-					"LLMService",
-					`Streaming error, falling back to non-streaming: ${streamError}`,
-					"warn",
-				);
 			}
 		}
 
-		const openaiRequest: OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming =
-			{
-				model: request.model,
-				messages: request.messages,
-				temperature: request.temperature,
-				top_p: request.topP,
-				max_tokens: request.maxTokens,
-				...(request.reasoning_effort !== undefined &&
-				request.reasoning_effort !== ""
-					? {
-							reasoning_effort:
-								request.reasoning_effort as unknown as OpenAI.Chat.Completions.ChatCompletionReasoningEffort,
-						}
-					: {}),
-			};
+		const openaiRequest: OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming &
+			OpenRouterProviderPayload = {
+			model: request.model,
+			messages: request.messages,
+			temperature: request.temperature,
+			top_p: request.topP,
+			max_tokens: request.maxTokens,
+			...(request.reasoning_effort !== undefined &&
+			request.reasoning_effort !== ""
+				? {
+						reasoning_effort:
+							request.reasoning_effort as unknown as OpenAI.Chat.Completions.ChatCompletionReasoningEffort,
+					}
+				: {}),
+			...(request.provider === "openrouter" && request.providerRouting
+				? { provider: request.providerRouting }
+				: {}),
+		};
 
 		// Add JSON Mode for OpenAI if response_schema is provided
 		if (request.provider === "openai" && request.responseSchema) {
 			openaiRequest.response_format = { type: "json_object" };
 		}
 
-		const response = await client.chat.completions.create(openaiRequest);
+		const response = await this.sendProviderPayload(
+			options.payloadLogStage,
+			openaiRequest,
+			(payload) =>
+				client.chat.completions.create(payload, { signal: options.signal }),
+		);
 
 		const message = response.choices[0]?.message as ReasoningFields | undefined;
 		const reasoningText =
@@ -1381,6 +1799,17 @@ export class LLMService {
 
 		const usage = response.usage;
 		if (!usage) {
+			if (
+				request.provider === "openrouter" &&
+				this.usageTrackingContext.getStore()
+			) {
+				throw new OpenRouterUsageUnavailableError(
+					"No usage information returned from OpenRouter API",
+					response.id,
+					response.model || request.model,
+					options.payloadLogStage,
+				);
+			}
 			throw new Error("No usage information returned from OpenAI API");
 		}
 
@@ -1428,15 +1857,25 @@ export class LLMService {
 			prompt_tokens?: number;
 			completion_tokens?: number;
 			total_tokens?: number;
+			cost?: number;
 			completion_tokens_details?: { reasoning_tokens?: number };
 		};
 		const reasoningTokens =
 			usageDetails.completion_tokens_details?.reasoning_tokens;
 
+		const billingUsage =
+			request.provider === "openrouter"
+				? parseOpenRouterUsage(usageDetails, {
+						requestId: response.id,
+						model: response.model || request.model,
+						stage: options.payloadLogStage,
+					})
+				: undefined;
+
 		return {
 			content,
 			provider: request.provider,
-			model: request.model,
+			model: response.model || request.model,
 			usage: {
 				promptTokens: usage.prompt_tokens || 0,
 				completionTokens: usage.completion_tokens || 0,
@@ -1448,6 +1887,8 @@ export class LLMService {
 			},
 			duration: 0, // Will be set by caller
 			timestamp: new Date().toISOString(),
+			requestId: response.id,
+			...(billingUsage ? { billingUsage } : {}),
 			finishReason: response.choices[0]?.finish_reason ?? undefined,
 			reasoningContent: reasoningText ?? undefined,
 		};
@@ -1589,6 +2030,7 @@ export class LLMService {
 	private async callPOE(
 		provider: AIProviderConfig,
 		request: LLMRequest,
+		options: LLMCallOptions,
 		/**
 		 * Get comprehensive performance statistics for the LLM service
 		 * Calculates metrics from all recorded API calls including success rates,
@@ -1612,105 +2054,207 @@ export class LLMService {
 		});
 
 		if (request.showReasoningTokens || request.showResponseStream) {
-			try {
-				const streamingParams: OpenAI.Chat.Completions.ChatCompletionCreateParamsStreaming =
-					{
-						model: request.model,
-						messages: request.messages,
-						temperature: request.temperature,
-						top_p: request.topP,
-						max_tokens: request.maxTokens,
-						stream: true,
-						...(request.responseSchema
-							? { response_format: { type: "json_object" } }
-							: {}),
-						...(request.reasoning_effort !== undefined &&
-						request.reasoning_effort !== ""
-							? {
-									reasoning_effort:
-										request.reasoning_effort as unknown as OpenAI.Chat.Completions.ChatCompletionReasoningEffort,
-								}
-							: {}),
-					};
+			const maxRepetitionRetries = Math.max(
+				0,
+				options.maxRepetitionRetries ?? 1,
+			);
+			const repetitionDetectionEnabled = !options.disableRepetitionDetection;
 
-				const stream = await client.chat.completions.create(streamingParams);
-				let accumulatedContent = "";
-				const reasoningFader = createStreamFader("reasoning", {
-					cycleLength: 100,
-				});
-				const responseFader = createStreamFader("streaming", {
-					cycleLength: 120,
-				});
+			for (let attempt = 0; attempt <= maxRepetitionRetries; attempt++) {
+				const streamAbortController = new AbortController();
+				const repetitionDetector = repetitionDetectionEnabled
+					? new StreamRepetitionDetector()
+					: undefined;
+
+				const compositeSignal = options.signal
+					? AbortSignal.any([options.signal, streamAbortController.signal])
+					: streamAbortController.signal;
+
 				let printedReasoningHeader = false;
 				let printedResponseHeader = false;
 
-				for await (const chunk of stream) {
-					const delta = chunk.choices[0]?.delta as ReasoningFields | undefined;
-					if (!delta) continue;
+				try {
+					const streamingParams: OpenAI.Chat.Completions.ChatCompletionCreateParamsStreaming =
+						{
+							model: request.model,
+							messages: request.messages,
+							temperature: request.temperature,
+							top_p: request.topP,
+							max_tokens: request.maxTokens,
+							stream: true,
+							...(request.responseSchema
+								? { response_format: { type: "json_object" } }
+								: {}),
+							...(request.reasoning_effort !== undefined &&
+							request.reasoning_effort !== ""
+								? {
+										reasoning_effort:
+											request.reasoning_effort as unknown as OpenAI.Chat.Completions.ChatCompletionReasoningEffort,
+									}
+								: {}),
+						};
 
-					const reasoningChunk =
-						delta.reasoning_content || delta.reasoning || delta.thinking;
+					const stream = await this.sendProviderPayload(
+						options.payloadLogStage,
+						streamingParams,
+						(payload) =>
+							client.chat.completions.create(payload, {
+								signal: compositeSignal,
+							}),
+					);
+					let accumulatedContent = "";
+					const reasoningFader = createStreamFader("reasoning", {
+						cycleLength: 100,
+					});
+					const responseFader = createStreamFader("streaming", {
+						cycleLength: 120,
+					});
 
-					if (request.showReasoningTokens && reasoningChunk) {
-						if (!printedReasoningHeader) {
-							const hdr = applyHsvFade("\n╭─ [Reasoning Stream]", "reasoning", {
-								bold: true,
-							});
-							process.stdout.write(`${hdr}\n│ `);
-							printedReasoningHeader = true;
-						}
-						process.stdout.write(reasoningFader.fadeChunk(reasoningChunk));
-					}
+					for await (const chunk of stream) {
+						if (options.signal?.aborted) throw options.signal.reason;
+						const delta = chunk.choices[0]?.delta as
+							| ReasoningFields
+							| undefined;
+						if (!delta) continue;
 
-					if (delta.content) {
-						accumulatedContent += delta.content;
-						if (request.showResponseStream) {
-							if (!printedResponseHeader) {
-								if (printedReasoningHeader) {
-									const closeReasoning = applyHsvFade("\n╰─", "reasoning");
-									process.stdout.write(`${closeReasoning}\n`);
-								}
-								const hdr = applyHsvFade(
-									"\n╭─ [Response Stream]",
-									"streaming",
-									{ bold: true },
+						const reasoningChunk =
+							delta.reasoning_content || delta.reasoning || delta.thinking;
+
+						if (reasoningChunk) {
+							if (repetitionDetector?.feed(reasoningChunk).detected) {
+								const error = repetitionDetector.createError(
+									request.provider,
+									request.model,
+									attempt + 1,
 								);
-								process.stdout.write(`${hdr}\n│ `);
-								printedResponseHeader = true;
+								logger.warn(
+									`Pathological reasoning repetition detected: period=${error.period}, repeats=${error.repeats}, snippet="${error.repeatedText.replace(/\n/g, "\\n")}". Aborting POE stream...`,
+									{
+										period: error.period,
+										repeats: error.repeats,
+										repeatedText: error.repeatedText,
+										totalChars: error.totalChars,
+										attempt: error.attempt,
+									},
+								);
+								if (printedReasoningHeader) {
+									writeLiveStreamEnd("reasoning");
+									printedReasoningHeader = false;
+								}
+								streamAbortController.abort(error);
+								throw error;
 							}
-							process.stdout.write(responseFader.fadeChunk(delta.content));
+
+							if (request.showReasoningTokens) {
+								if (!printedReasoningHeader) {
+									writeLiveStreamStart("Reasoning Stream", "reasoning");
+									printedReasoningHeader = true;
+								}
+								process.stdout.write(reasoningFader.fadeChunk(reasoningChunk));
+							}
+						}
+
+						if (delta.content) {
+							accumulatedContent += delta.content;
+							if (request.showResponseStream) {
+								if (!printedResponseHeader) {
+									if (printedReasoningHeader) {
+										writeLiveStreamEnd("reasoning");
+										printedReasoningHeader = false;
+									}
+									writeLiveStreamStart("Response Stream", "streaming");
+									printedResponseHeader = true;
+								}
+								process.stdout.write(responseFader.fadeChunk(delta.content));
+							}
 						}
 					}
-				}
 
-				if (printedResponseHeader) {
-					const closeStream = applyHsvFade("\n╰─\n", "streaming");
-					process.stdout.write(closeStream);
-				} else if (printedReasoningHeader) {
-					const closeReasoning = applyHsvFade("\n╰─\n", "reasoning");
-					process.stdout.write(closeReasoning);
-				}
+					if (printedResponseHeader) {
+						writeLiveStreamEnd("streaming");
+					} else if (printedReasoningHeader) {
+						writeLiveStreamEnd("reasoning");
+					}
 
-				if (accumulatedContent) {
-					return {
-						content: accumulatedContent,
-						provider: request.provider,
-						model: request.model,
-						usage: {
-							promptTokens: 0,
-							completionTokens: this.estimateTokenCount(accumulatedContent),
-							totalTokens: this.estimateTokenCount(accumulatedContent),
-						},
-						duration: 0,
-						timestamp: new Date().toISOString(),
-					};
+					if (accumulatedContent) {
+						return {
+							content: accumulatedContent,
+							provider: request.provider,
+							model: request.model,
+							usage: {
+								promptTokens: 0,
+								completionTokens: this.estimateTokenCount(accumulatedContent),
+								totalTokens: this.estimateTokenCount(accumulatedContent),
+							},
+							duration: 0,
+							timestamp: new Date().toISOString(),
+						};
+					}
+
+					// If stream completed without accumulatedContent, break attempt loop to allow fallback
+					break;
+				} catch (streamError) {
+					if (printedResponseHeader) {
+						writeLiveStreamEnd("streaming");
+						printedResponseHeader = false;
+					} else if (printedReasoningHeader) {
+						writeLiveStreamEnd("reasoning");
+						printedReasoningHeader = false;
+					}
+
+					if (options.signal?.aborted) {
+						throw options.signal.reason;
+					}
+
+					const isRepetitionError =
+						streamError instanceof PathologicalReasoningRepetitionError ||
+						(streamError as { name?: string })?.name ===
+							"PathologicalReasoningRepetitionError" ||
+						streamAbortController.signal.reason instanceof
+							PathologicalReasoningRepetitionError ||
+						(streamAbortController.signal.reason as { name?: string })?.name ===
+							"PathologicalReasoningRepetitionError";
+
+					if (isRepetitionError) {
+						const actualError =
+							streamError instanceof PathologicalReasoningRepetitionError
+								? streamError
+								: streamAbortController.signal.reason instanceof
+										PathologicalReasoningRepetitionError
+									? streamAbortController.signal.reason
+									: (streamError as Error);
+
+						if (attempt < maxRepetitionRetries) {
+							logger.warn(
+								`Retrying POE stream after pathological reasoning repetition (attempt ${attempt + 1} of ${maxRepetitionRetries})...`,
+								{
+									attempt: attempt + 1,
+									maxRetries: maxRepetitionRetries,
+									provider: request.provider,
+									model: request.model,
+								},
+							);
+							await abortableDelay(1000, options.signal);
+							continue;
+						}
+						logger.error(
+							`Pathological reasoning repetition retries exhausted (${attempt + 1}/${maxRepetitionRetries + 1}) in POE. Aborting request.`,
+							{
+								attempt: attempt + 1,
+								provider: request.provider,
+								model: request.model,
+							},
+						);
+						throw actualError;
+					}
+
+					log(
+						"LLMService",
+						`POE streaming error, falling back to non-streaming: ${streamError}`,
+						"warn",
+					);
+					break;
 				}
-			} catch (streamError) {
-				log(
-					"LLMService",
-					`POE streaming error, falling back to non-streaming: ${streamError}`,
-					"warn",
-				);
 			}
 		}
 
@@ -1735,7 +2279,12 @@ export class LLMService {
 			poeRequest.response_format = { type: "json_object" };
 		}
 
-		const response = await client.chat.completions.create(poeRequest);
+		const response = await this.sendProviderPayload(
+			options.payloadLogStage,
+			poeRequest,
+			(payload) =>
+				client.chat.completions.create(payload, { signal: options.signal }),
+		);
 
 		const message = response.choices[0]?.message as ReasoningFields | undefined;
 		const reasoningText =

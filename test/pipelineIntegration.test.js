@@ -74,7 +74,7 @@ test("offline pipeline integration: acquisition -> processing -> clothing -> jud
 	);
 	await fs.writeFile(
 		path.join(profileDir, "my_resume.txt"),
-		"the candidate - Experienced Cloud Security Engineer with DevSecOps expertise.\n",
+		"Alex Morgan - Experienced Cloud Systems Engineer with microservices expertise.\n",
 		"utf8",
 	);
 	await fs.writeFile(
@@ -104,7 +104,7 @@ test("offline pipeline integration: acquisition -> processing -> clothing -> jud
 	);
 	await fs.writeFile(
 		path.join(profileDir, "my_testimonials.txt"),
-		"the candidate is a top-tier security professional.\n",
+		"Alex is a top-tier systems professional.\n",
 		"utf8",
 	);
 
@@ -167,10 +167,10 @@ test("offline pipeline integration: acquisition -> processing -> clothing -> jud
 		) {
 			return {
 				content: `# Resume Filename
-Candidate_Materials_Cloud_Security_Engineer
+Alex_Morgan_Materials_Cloud_Security_Engineer
 
 # Cover Letter Filename
-Candidate_Cover_Letter_Acme_Security.txt
+Alex_Morgan_Cover_Letter_Acme_Security.txt
 
 # Optimized & Tailored Professional Title
 Lead Cloud Security Engineer
@@ -280,13 +280,11 @@ Dear Hiring Team at Acme Security,\n\nI am thrilled to apply for the Cloud Secur
 		preset: "jep_glm-5.3-flash",
 		"use-jobdb": true,
 		"strict-parsing": false,
-		"log-payload": false,
 		sleep: 0,
 		"eval-mode": 1,
 		"show-reasoning": false,
 		"show-stream": false,
 		verbose: false,
-		logDir,
 	});
 
 	assert.equal(judgeResult.jobs, 1);
@@ -340,7 +338,6 @@ Dear Hiring Team at Acme Security,\n\nI am thrilled to apply for the Cloud Secur
 		verbose: false,
 		sleep: 0,
 		jitter: false,
-		logDir,
 	});
 
 	assert.equal(
@@ -397,13 +394,11 @@ Dear Hiring Team at Acme Security,\n\nI am thrilled to apply for the Cloud Secur
 		preset: "jep_glm-5.3-flash",
 		"use-jobdb": true,
 		"strict-parsing": false,
-		"log-payload": false,
 		sleep: 0,
 		"eval-mode": 1,
 		"show-reasoning": false,
 		"show-stream": false,
 		verbose: false,
-		logDir,
 	});
 	assert.equal(
 		llmCalls,
@@ -418,7 +413,6 @@ Dear Hiring Team at Acme Security,\n\nI am thrilled to apply for the Cloud Secur
 		verbose: false,
 		sleep: 0,
 		jitter: false,
-		logDir,
 	});
 	assert.equal(
 		llmCalls,

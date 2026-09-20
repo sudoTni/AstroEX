@@ -1,12 +1,16 @@
+/**
+ * Adapted from ts-jobspy (Copyright 2025-2026 Alpha Romer Coma) and
+ * JobSpy (Copyright 2023 Cullen Watson, Zachary Hampton), licensed under MIT.
+ * See THIRD_PARTY_NOTICES.md for complete license texts.
+ */
 import type { AxiosResponse } from "axios";
 
-/**
- * Vendored and adapted from ts-jobspy-main/src/indeed (MIT).
- * The query is intentionally kept local so AstroEX remains standalone and
- * does not execute code from the neighbouring ts-jobspy checkout.
- */
+import { throwIfCancelled } from "../../pipelineCancellation";
+import { createLogger } from "../../utils";
 import type { CanonicalAcquiredJob, CanonicalCompensation } from "../types";
 import { createJobSpySession, descriptionToFormat } from "./http";
+
+const logger = createLogger("IndeedSearch");
 
 const INDEED_API_URL = "https://apis.indeed.com/graphql";
 const INDEED_HEADERS = {
@@ -20,6 +24,12 @@ const INDEED_HEADERS = {
 	"indeed-app-info":
 		"appv=193.1; appid=com.indeed.jobsearch; osv=16.6.1; os=ios; dtype=phone",
 };
+
+// Public client identifier extracted from Indeed's mobile application for GraphQL search queries.
+// Not a private key or user credential. Can be overridden via ASTROEX_INDEED_CLIENT_KEY.
+const DEFAULT_INDEED_CLIENT_KEY =
+	process.env.ASTROEX_INDEED_CLIENT_KEY ||
+	"161092c2017b5bbab13edb12461a62d5a833871e7cad6d9d475304573de67ac8";
 
 const QUERY_TEMPLATE =
 	"query AstroExIndeed { jobSearch({what} {location} limit: 100 {cursor} sort: RELEVANCE {filters}) { pageInfo { nextCursor } results { job { key title datePublished description { html } location { city admin1Code countryCode formatted { long } } compensation { baseSalary { unitOfWork range { ... on Range { min max } } } estimated { currencyCode baseSalary { unitOfWork range { ... on Range { min max } } } } currencyCode } attributes { key label } employer { name relativeCompanyPageUrl dossier { employerDetails { industry } images { squareLogoUrl } links { corporateWebsite } } } recruit { viewJobUrl } } } } }";
@@ -97,10 +107,33 @@ export function buildIndeedFilters(options: {
 	hoursOld?: number;
 	easyApply?: boolean;
 	isRemote?: boolean;
+	remoteOnly?: boolean;
 	jobType?: string;
 }): string {
-	if (options.hoursOld)
+	if (options.hoursOld !== undefined) {
+		if (!Number.isFinite(options.hoursOld) || options.hoursOld <= 0) {
+			throw new Error("hoursOld must be greater than zero when supplied");
+		}
 		return `filters: { date: { field: "dateOnIndeed", start: "${options.hoursOld}h" } }`;
+	}
+	if (options.remoteOnly && options.easyApply) {
+		throw new Error(
+			"Indeed remote-only and easy-apply filters cannot be combined without hoursOld",
+		);
+	}
+	if (options.remoteOnly) {
+		const remoteKeys = ["DSQF7"];
+		const jobTypeKeys: Record<string, string> = {
+			fulltime: "CF3CP",
+			parttime: "75GKK",
+			contract: "NJXCK",
+			internship: "VDTG7",
+		};
+		if (options.jobType && jobTypeKeys[options.jobType]) {
+			remoteKeys.unshift(jobTypeKeys[options.jobType]);
+		}
+		return `filters: { composite: { filters: [{ keyword: { field: "attributes", keys: [${remoteKeys.map((key) => `"${key}"`).join(", ")}]} }] } }`;
+	}
 	if (options.easyApply)
 		return 'filters: { keyword: { field: "indeedApplyScope", keys: ["DESKTOP"] } }';
 	const keys: string[] = [];
@@ -119,16 +152,18 @@ export function buildIndeedFilters(options: {
 }
 
 /**
- * The public Indeed query accepts the date filter used for fresh searches, but
- * the adapted endpoint has historically treated it as mutually exclusive with
- * attribute filters. Apply the remote constraint to every returned record as
- * a second, deterministic checkpoint instead of issuing an invalid query.
+ * Classify returned records for strict remote-only validation. Indeed's remote
+ * attribute is authoritative; text matching remains a fallback for date-filtered
+ * searches, where the mutually exclusive DSQF7 request filter cannot be sent.
  */
 export function isIndeedRemoteJob(job: {
 	title?: string;
 	attributes?: Array<{ key: string; label: string }>;
 	location?: { formatted?: { long?: string } };
 }): boolean {
+	if (job.attributes?.some((attribute) => attribute.key === "DSQF7")) {
+		return true;
+	}
 	const attributes = job.attributes
 		?.map((attribute) => `${attribute.key} ${attribute.label}`)
 		.join(" ");
@@ -156,6 +191,7 @@ export async function acquireIndeedJobs(options: {
 	resultsWanted: number;
 	hoursOld?: number;
 	isRemote?: boolean;
+	remoteOnly?: boolean;
 	jobType?: string;
 	easyApply?: boolean;
 	offset?: number;
@@ -164,13 +200,12 @@ export async function acquireIndeedJobs(options: {
 	proxies?: string[];
 	userAgent?: string;
 	apiKey?: string;
+	showFetchUrl?: boolean;
+	signal?: AbortSignal;
 }): Promise<CanonicalAcquiredJob[]> {
-	const apiKey = options.apiKey ?? process.env.ASTROEX_INDEED_API_KEY;
-	if (!apiKey?.trim()) {
-		throw new Error(
-			"Missing Indeed client key. Set ASTROEX_INDEED_API_KEY before acquiring jobs.",
-		);
-	}
+	const showFetchUrl = Boolean(
+		options.showFetchUrl || process.env.ASTROEX_SHOW_FETCH_URL === "1",
+	);
 	const session = createJobSpySession({
 		proxies: options.proxies,
 		userAgent: options.userAgent,
@@ -180,8 +215,13 @@ export async function acquireIndeedJobs(options: {
 	const seen = new Set<string>();
 	let cursor: string | null = null;
 	const wanted = options.resultsWanted + (options.offset ?? 0);
+	const remoteRequested =
+		options.remoteOnly === true || options.isRemote === true;
 
+	let pageNum = 0;
 	while (jobs.length < wanted) {
+		throwIfCancelled(options.signal);
+		pageNum += 1;
 		const query: string = QUERY_TEMPLATE.replace(
 			"{what}",
 			options.searchTerm ? `what: "${escapeGraphQL(options.searchTerm)}"` : "",
@@ -194,6 +234,24 @@ export async function acquireIndeedJobs(options: {
 			)
 			.replace("{cursor}", cursor ? `cursor: "${escapeGraphQL(cursor)}"` : "")
 			.replace("{filters}", buildIndeedFilters(options));
+		const fetchUrl = INDEED_API_URL;
+		const filterMode =
+			options.hoursOld !== undefined
+				? `hoursOld:${options.hoursOld}`
+				: options.remoteOnly
+					? "remoteOnly:DSQF7"
+					: options.easyApply
+						? "easyApply"
+						: options.isRemote
+							? "remote:DSQF7"
+							: options.jobType
+								? `jobType:${options.jobType}`
+								: "none";
+		if (showFetchUrl) {
+			logger.info(
+				`[search][indeed] POST ${fetchUrl} filter=${filterMode} cursor=${cursor ? "present" : "none"}`,
+			);
+		}
 		const response: AxiosResponse<IndeedResponse> =
 			await session.post<IndeedResponse>(
 				INDEED_API_URL,
@@ -201,21 +259,26 @@ export async function acquireIndeedJobs(options: {
 				{
 					headers: {
 						...INDEED_HEADERS,
-						"indeed-api-key": apiKey,
+						"indeed-api-key":
+							options.apiKey ??
+							process.env.ASTROEX_INDEED_API_KEY ??
+							DEFAULT_INDEED_CLIENT_KEY,
 						"indeed-co": country.code,
 					},
 					timeout: 10_000,
+					signal: options.signal,
 				},
 			);
 		const search: IndeedSearch | undefined = response.data.data?.jobSearch;
 		const results = search?.results ?? [];
 		if (!results.length) break;
 
+		let pageFetched = 0;
 		for (const result of results) {
 			const job = result.job;
 			if (!job.key || seen.has(job.key)) continue;
 			const isRemote = isIndeedRemoteJob(job);
-			if (options.isRemote && !isRemote) continue;
+			if (remoteRequested && !isRemote) continue;
 			seen.add(job.key);
 			const html = job.description?.html ?? "";
 			const baseSalary =
@@ -275,8 +338,27 @@ export async function acquireIndeedJobs(options: {
 				compensation,
 				acquiredAt: new Date().toISOString(),
 			});
+			pageFetched += 1;
 			if (jobs.length >= wanted) break;
 		}
+		logger.info(
+			showFetchUrl
+				? `[search][indeed] page=${pageNum} fetched=${pageFetched} cumulative=${jobs.length} url=${fetchUrl} filter=${filterMode}`
+				: `[search][indeed] page=${pageNum} fetched=${pageFetched} cumulative=${jobs.length}`,
+			showFetchUrl
+				? {
+						page: pageNum,
+						fetched: pageFetched,
+						cumulative: jobs.length,
+						url: fetchUrl,
+						filterMode,
+					}
+				: {
+						page: pageNum,
+						fetched: pageFetched,
+						cumulative: jobs.length,
+					},
+		);
 		cursor = search?.pageInfo?.nextCursor ?? null;
 		if (!cursor) break;
 	}

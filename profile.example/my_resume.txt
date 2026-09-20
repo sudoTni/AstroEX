@@ -1,11 +1,47 @@
-CANDIDATE NAME
-candidate@example.com | Example City, ST
+Alex Morgan
+Senior Full-Stack & Cloud Systems Engineer
+San Francisco, CA • (555) 019-2834 • alex.morgan.tech@example.com
+linkedin.com/in/example-alexmorgan • github.com/example-alexmorgan
 
-PROFESSIONAL SUMMARY
-Replace this file with the candidate's complete resume before running an LLM stage.
+Professional Summary
 
-EXPERIENCE
-Example role and evidence-based accomplishments.
+Senior Full-Stack & Cloud Systems Engineer with 10+ years of enterprise engineering experience designing, scaling, and operating resilient cloud-native architectures, distributed services, and developer tooling. Proven background engineering high-throughput microservices in TypeScript, Node.js, and Python across AWS and GCP environments. Experienced in modern observability, container orchestration with Kubernetes and Docker, CI/CD pipeline automation, and production database modeling with PostgreSQL and Redis. Adept at translating complex product requirements into robust, maintainable systems while mentoring engineering teams and championing clean code, test automation, and architectural best practices.
 
-EDUCATION AND CERTIFICATIONS
-Example education and certifications.
+Core Skills
+
+* Languages & Core Tech: TypeScript • JavaScript • Node.js • Python • Go • SQL • HTML5 • CSS3 • Shell Scripting
+* Cloud & Infrastructure: AWS (ECS, Lambda, S3, RDS, DynamoDB, SQS, SNS) • Google Cloud Platform (GCP) • Docker • Kubernetes • Terraform • Linux Systems Administration
+* Architecture & Data: Distributed Systems • Microservices • RESTful APIs • GraphQL • PostgreSQL • Redis • MongoDB • Apache Kafka • Event-Driven Architecture • System Design
+* Engineering Practices: CI/CD (GitHub Actions) • Test-Driven Development (TDD) • Jest • Vitest • Observability (Prometheus, Grafana, Datadog) • Performance Profiling • Security Best Practices
+* Generative AI & Automation: LLM Integration • OpenAI API • Prompt Engineering • Vector Databases • Autonomous Workflows
+
+Professional Experience
+
+Staff Software Engineer • Apex Cloud Systems • San Francisco, CA (Hybrid) • Jan 2023 – Present
+* Architected and delivered an event-driven data ingestion platform processing 50M+ daily events using Node.js, TypeScript, Apache Kafka, and AWS ECS.
+* Reduced median API response latency by 42% through structured query optimization, Redis tier caching, and connection pooling across high-volume endpoints.
+* Spearheaded migration from legacy monolithic backend to containerized microservices orchestrated on Kubernetes, improving deployment frequency from bi-weekly to daily.
+* Led a cross-functional squad of 7 engineers, facilitating sprint planning, system design reviews, and pair programming to uphold rigorous code quality standards.
+
+Senior Backend Engineer • Beacon Data Labs • Remote • Mar 2020 – Dec 2022
+* Designed and maintained scalable RESTful and GraphQL APIs in TypeScript, Fastify, and PostgreSQL serving 120,000+ active enterprise users.
+* Implemented end-to-end telemetry and monitoring dashboards using Prometheus and Grafana, reducing Mean Time to Detection (MTTD) of production incidents by 60%.
+* Automated continuous integration and deployment pipelines with GitHub Actions, reducing release cycle lead times by 75%.
+* Authored core data validation and rate-limiting middleware to guard against upstream DDoS attacks and ensure service reliability under load spikes.
+
+Full-Stack Software Engineer • Horizon Digital Solutions • Austin, TX • Aug 2016 – Feb 2020
+* Developed and shipped client-facing web applications using React, TypeScript, Node.js, and Express, achieving 99.95% application uptime.
+* Modeled relational database schemas in PostgreSQL and optimized complex SQL queries to eliminate application-level bottlenecks.
+* Integrated third-party payment gateways, authentication providers (OAuth2/OIDC), and enterprise webhook event dispatchers.
+* Collaborated directly with product managers and UX designers to iterate quickly on customer feedback, improving onboarding conversion by 28%.
+
+Software Engineer • Zenith Media Technologies • Austin, TX • Jun 2014 – Jul 2016
+* Built internal administrative tooling, reporting dashboards, and ETL pipelines using Python, Flask, and PostgreSQL.
+* Automated manual operational workflows, eliminating approximately 20 hours per week of manual data reconciliation for operations teams.
+* Participated in an on-call rotation, resolving critical production anomalies, analyzing log traces, and documenting comprehensive post-mortem reports.
+
+Education & Certifications
+
+* AWS Certified Solutions Architect – Associate • Amazon Web Services
+* Certified Kubernetes Application Developer (CKAD) • Cloud Native Computing Foundation
+* Bachelor of Science in Computer Science • University of Texas at Austin • Graduated May 2014

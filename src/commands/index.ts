@@ -7,3 +7,5 @@ export { addMakeMaterialsCommands } from "./makeMaterials";
 export { addProcessDataCommand } from "./processData";
 export { addPreflightCommand } from "./preflight";
 export { addRunPipelineCommand } from "./runPipeline";
+export { addEnrichJobsCommand } from "./enrichJobs";
+export { runRemoteEval } from "./remoteEval";

@@ -1,5 +1,6 @@
 import type { Argv } from "yargs";
 import { verifyArtifactManifest } from "../artifactManifest";
+import { writeMachineJson } from "../logging";
 import type { GlobalArgs } from "../types";
 
 export function addArtifactCommand(yargs: Argv<GlobalArgs>): Argv<GlobalArgs> {
@@ -10,7 +11,7 @@ export function addArtifactCommand(yargs: Argv<GlobalArgs>): Argv<GlobalArgs> {
 			command.positional("file", { type: "string", demandOption: true }),
 		async (argv) => {
 			const result = await verifyArtifactManifest(String(argv.file));
-			console.log(JSON.stringify(result, null, 2));
+			writeMachineJson(result);
 			if (!result.ok) process.exitCode = 1;
 		},
 	);

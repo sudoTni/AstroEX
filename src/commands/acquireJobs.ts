@@ -10,21 +10,12 @@ import type {
 } from "../acquisition/types";
 import { JOB_DB_RETENTION_MS } from "../constants";
 import { JobRepository } from "../jobRepository";
-import {
-	getDataDirectory,
-	getLogsDirectory,
-	getProfileFile,
-} from "../runtimePaths";
+import { abortableDelay, throwIfCancelled } from "../pipelineCancellation";
+import { getDataDirectory, getProfileFile } from "../runtimePaths";
 import { createStatisticsCollector } from "../statistics";
 import type { GlobalArgs } from "../types";
-import {
-	closeFileLogging,
-	createLogger,
-	formatDate,
-	formatDuration,
-	initializeFileLogging,
-	log,
-} from "../utils";
+import { createLogger, formatDuration, log } from "../utils";
+import { createProgressReporter } from "../utils/progress";
 
 const logger = createLogger("AcquireJobs");
 
@@ -32,13 +23,15 @@ const defaultSearchTermsFile = getProfileFile("search_terms.txt");
 
 export type AcquireJobsCli = GlobalArgs & {
 	sites: string;
+	"job-provider"?: string;
+	jobProvider?: string;
 	"search-terms": string;
 	"search-terms-file": string;
 	locations: string;
 	"results-wanted": number;
 	distance: number;
-	"hours-old": number;
-	remote: boolean;
+	"hours-old"?: number;
+	remote?: boolean;
 	"remote-only"?: boolean;
 	remoteOnly?: boolean;
 	"job-type"?: string;
@@ -49,8 +42,50 @@ export type AcquireJobsCli = GlobalArgs & {
 	proxies: string;
 	"user-agent"?: string;
 	"output-file": string;
+	"output-file-indeed"?: string;
+	"output-file-linkedin"?: string;
+	outputFilesBySource?: Partial<Record<AcquisitionSource, string>>;
 	"use-jobdb": boolean;
+	"show-fetch-url"?: boolean;
+	showFetchUrl?: boolean;
+	signal?: AbortSignal;
 };
+
+export function resolveOutputFiles(
+	dataDirectory: string,
+	sources: AcquisitionSource[],
+	rawOutputFile?: string,
+	outputFilesBySource?: Partial<Record<AcquisitionSource, string>>,
+	outputFileIndeed?: string,
+	outputFileLinkedIn?: string,
+): Record<AcquisitionSource, string> {
+	const defaultIndeed = path.join(dataDirectory, "acquired_jobs_indeed.json");
+	const defaultLinkedIn = path.join(
+		dataDirectory,
+		"acquired_jobs_linkedin.json",
+	);
+	const result: Record<AcquisitionSource, string> = {
+		indeed: outputFilesBySource?.indeed || outputFileIndeed || defaultIndeed,
+		linkedin:
+			outputFilesBySource?.linkedin || outputFileLinkedIn || defaultLinkedIn,
+	};
+	if (rawOutputFile) {
+		if (sources.length === 1) {
+			result[sources[0]] = rawOutputFile;
+		} else {
+			const base = path.basename(rawOutputFile);
+			if (base.includes("indeed") || base === "acquired_jobs_indeed.json") {
+				result.indeed = rawOutputFile;
+			} else if (
+				base.includes("linkedin") ||
+				base === "acquired_jobs_linkedin.json"
+			) {
+				result.linkedin = rawOutputFile;
+			}
+		}
+	}
+	return result;
+}
 
 export function parseAcquisitionSources(value: string): AcquisitionSource[] {
 	const sources = value
@@ -58,12 +93,15 @@ export function parseAcquisitionSources(value: string): AcquisitionSource[] {
 		.map((source) => source.trim().toLowerCase())
 		.filter(Boolean);
 	if (sources.length === 0) {
-		throw new Error("--sites must include indeed");
+		throw new Error(
+			"--sites must include at least one supported source (indeed, linkedin)",
+		);
 	}
-	const invalid = sources.filter((source) => source !== "indeed");
+	const supportedSources = new Set<string>(["indeed", "linkedin"]);
+	const invalid = sources.filter((source) => !supportedSources.has(source));
 	if (invalid.length > 0) {
 		throw new Error(
-			`Unsupported acquisition site(s): ${invalid.join(", ")}. Only indeed is supported.`,
+			`Unsupported acquisition site(s): ${invalid.join(", ")}. Supported sources: indeed, linkedin.`,
 		);
 	}
 	return [...new Set(sources)] as AcquisitionSource[];
@@ -109,6 +147,17 @@ export function filterRemoteOnlyJobs(
 	jobs: CanonicalAcquiredJob[],
 ): CanonicalAcquiredJob[] {
 	return jobs.filter((job) => job.isRemote === true);
+}
+
+/** Resolve an explicitly supplied CLI value before falling back to the environment. */
+export function resolveRemoteOnlyOption(
+	kebabValue?: boolean,
+	camelValue?: boolean,
+	environmentValue = process.env.ASTROEX_REMOTE_ONLY,
+): boolean {
+	if (kebabValue !== undefined) return kebabValue;
+	if (camelValue !== undefined) return camelValue;
+	return environmentValue === "1";
 }
 
 export async function loadAcquisitionCheckpoint(
@@ -189,13 +238,20 @@ export const addAcquireJobsCommand = (
 	yargs.command({
 		command: "acquire-jobs",
 		describe:
-			"Acquire jobs from the public Indeed endpoint into canonical Indeed artifacts.",
-		builder: (yy: Argv<GlobalArgs>) =>
-			(yy as Argv<AcquireJobsCli>)
+			"Acquire jobs from supported endpoints (Indeed, LinkedIn) into canonical artifacts.",
+		builder: (yy: Argv<GlobalArgs>) => {
+			const builder: Argv = yy;
+			return builder
 				.option("sites", {
 					type: "string",
 					default: "indeed",
-					description: "Acquisition source. Only indeed is supported.",
+					description:
+						"Acquisition source(s): indeed, linkedin, or comma-separated list.",
+				})
+				.option("job-provider", {
+					type: "string",
+					description:
+						"Alias for --sites (supports indeed, linkedin, or comma-separated list).",
 				})
 				.option("search-terms", {
 					type: "string",
@@ -227,18 +283,17 @@ export const addAcquireJobsCommand = (
 				})
 				.option("hours-old", {
 					type: "number",
-					default: 168,
-					description: "Only include jobs posted within this many hours.",
+					description:
+						"Only include jobs posted within this many hours. Omit for no age constraint.",
 				})
 				.option("remote", {
 					type: "boolean",
-					default: true,
+					default: false,
 					description:
-						"Restrict searches to remote jobs. Enabled by default; use --no-remote for broad searches.",
+						"Legacy search-level remote constraint. Disabled by default; prefer --remote-only for strict filtering.",
 				})
 				.option("remote-only", {
 					type: "boolean",
-					default: false,
 					description:
 						"Retain only acquired jobs whose isRemote property is explicitly true. Excludes non-remote or indeterminate jobs.",
 				})
@@ -285,7 +340,17 @@ export const addAcquireJobsCommand = (
 					type: "string",
 					default: "",
 					description:
-						"Canonical JSON output path. Defaults to data/acquired_jobs_<timestamp>.json.",
+						"Canonical JSON output path. When multiple sources are acquired, defaults to acquired_jobs_<source>.json in the output directory.",
+				})
+				.option("output-file-indeed", {
+					type: "string",
+					description:
+						"Output path for Indeed jobs (defaults to acquired_jobs_indeed.json).",
+				})
+				.option("output-file-linkedin", {
+					type: "string",
+					description:
+						"Output path for LinkedIn jobs (defaults to acquired_jobs_linkedin.json).",
 				})
 				.option("use-jobdb", {
 					type: "boolean",
@@ -293,8 +358,17 @@ export const addAcquireJobsCommand = (
 					description:
 						"Skip records discovered during the SQLite repository retention period.",
 				})
+				.option("show-fetch-url", {
+					type: "boolean",
+					default: false,
+					description:
+						"Display Indeed and LinkedIn fetch URLs in console output.",
+				})
 				.check((argv) => {
-					parseAcquisitionSources(String(argv.sites ?? ""));
+					const rawSites = String(
+						argv["job-provider"] || argv.sites || "indeed",
+					);
+					parseAcquisitionSources(rawSites);
 					if (
 						!Number.isInteger(argv["results-wanted"]) ||
 						argv["results-wanted"] <= 0
@@ -302,38 +376,52 @@ export const addAcquireJobsCommand = (
 						throw new Error("--results-wanted must be a positive integer");
 					if (!Number.isFinite(argv.distance) || argv.distance < 0)
 						throw new Error("--distance must be zero or greater");
-					if (!Number.isFinite(argv["hours-old"]) || argv["hours-old"] < 0)
-						throw new Error("--hours-old must be zero or greater");
+					if (
+						argv["hours-old"] !== undefined &&
+						(!Number.isFinite(argv["hours-old"]) || argv["hours-old"] <= 0)
+					)
+						throw new Error(
+							"--hours-old must be greater than zero when supplied",
+						);
 					return true;
-				}),
-		handler: async (argv: Arguments<AcquireJobsCli>) => {
-			await runAcquireJobs(argv as AcquireJobsCli);
+				});
+		},
+		handler: async (argv: Arguments) => {
+			await runAcquireJobs(argv as unknown as AcquireJobsCli);
 		},
 	});
 
 export async function runAcquireJobs(
 	argv: AcquireJobsCli,
-): Promise<{ outputFile: string; jobs: number }> {
+): Promise<{ outputFile: string; outputFiles?: string[]; jobs: number }> {
 	const stats = createStatisticsCollector("acquire-jobs");
 	stats.startCollection();
 	const started = performance.now();
-	const isRemoteOnly = Boolean(argv["remote-only"] || argv.remoteOnly);
+	const isRemoteOnly = resolveRemoteOnlyOption(
+		argv["remote-only"],
+		argv.remoteOnly,
+	);
 	let jobRepository: JobRepository | undefined;
 	let outputFile = "";
 	let savedJobsCount = 0;
+	let sources: AcquisitionSource[] = [];
+	let resolvedOutputFiles: Record<AcquisitionSource, string> = {
+		indeed: "",
+		linkedin: "",
+	};
 	const dataDirectory = argv["output-file"]
 		? path.dirname(argv["output-file"])
 		: getDataDirectory();
-	const defaultLogDirectory = getLogsDirectory();
 	try {
-		if (!argv.disableFileLogging) {
-			initializeFileLogging(
-				typeof argv.logDir === "string" ? argv.logDir : defaultLogDirectory,
-				`${formatDate(new Date(), "yyyyMMdd_HHmmss")}_acquire-jobs_${typeof argv.logFile === "string" ? argv.logFile : "astroex.log"}`,
-				"AcquireJobs",
-			);
-		}
-		const sources = parseAcquisitionSources(argv.sites);
+		const rawSites = String(
+			argv["job-provider"] || argv.jobProvider || argv.sites || "indeed",
+		);
+		const showFetchUrl = Boolean(
+			argv["show-fetch-url"] ||
+				argv.showFetchUrl ||
+				process.env.ASTROEX_SHOW_FETCH_URL === "1",
+		);
+		sources = parseAcquisitionSources(rawSites);
 		const terms = await loadSearchTerms(
 			argv["search-terms"],
 			argv["search-terms-file"],
@@ -344,13 +432,16 @@ export async function runAcquireJobs(
 			);
 		const locations = parseList(argv.locations);
 		const queryLocations = locations.length > 0 ? locations : [undefined];
-		outputFile =
-			argv["output-file"] ||
-			path.join(
-				dataDirectory,
-				`acquired_jobs_${formatDate(new Date(), "yyyyMMdd_HHmmss")}.json`,
-			);
-		await fs.mkdir(path.dirname(outputFile), { recursive: true });
+
+		resolvedOutputFiles = resolveOutputFiles(
+			dataDirectory,
+			sources,
+			argv["output-file"],
+			argv.outputFilesBySource,
+			argv["output-file-indeed"],
+			argv["output-file-linkedin"],
+		);
+		outputFile = resolvedOutputFiles[sources[0]] ?? argv["output-file"];
 
 		jobRepository = new JobRepository({
 			dbFilePath: path.join(dataDirectory, "jobDB.sqlite"),
@@ -367,39 +458,53 @@ export async function runAcquireJobs(
 			});
 
 		const provider = new IndeedProvider();
-		let savedJobs = await loadAcquisitionCheckpoint(outputFile);
-		if (isRemoteOnly) {
-			const initialCount = savedJobs.length;
-			savedJobs = filterRemoteOnlyJobs(savedJobs);
-			const removedCount = initialCount - savedJobs.length;
-			if (removedCount > 0) {
-				logger.info(
-					`Filtered out ${removedCount} non-remote jobs from resumed checkpoint ${outputFile} (--remote-only enabled).`,
-					{
-						retainedCount: savedJobs.length,
-						removedCount,
-						outputFile,
-					},
-				);
-				await writeAcquisitionCheckpoint(outputFile, savedJobs);
+		const savedJobsBySource = new Map<
+			AcquisitionSource,
+			CanonicalAcquiredJob[]
+		>();
+		const initialCheckpointJobCounts = new Map<AcquisitionSource, number>();
+		const savedJobIds = new Set<string>();
+
+		for (const source of sources) {
+			const file = resolvedOutputFiles[source];
+			await fs.mkdir(path.dirname(file), { recursive: true });
+			let sourceJobs = await loadAcquisitionCheckpoint(file);
+			if (isRemoteOnly) {
+				const initialCount = sourceJobs.length;
+				sourceJobs = filterRemoteOnlyJobs(sourceJobs);
+				const removedCount = initialCount - sourceJobs.length;
+				if (removedCount > 0) {
+					logger.info(
+						`Filtered out ${removedCount} non-remote jobs from resumed checkpoint ${file} (--remote-only enabled).`,
+						{
+							retainedCount: sourceJobs.length,
+							removedCount,
+							outputFile: file,
+						},
+					);
+					await writeAcquisitionCheckpoint(file, sourceJobs);
+				}
 			}
-		}
-		const savedJobIds = new Set(savedJobs.map((job) => job.id));
-		const initialCheckpointJobCount = savedJobs.length;
-		if (savedJobs.length > 0) {
-			logger.info(`Resuming ${savedJobs.length} jobs from ${outputFile}.`, {
-				resumedCount: savedJobs.length,
-				outputFile,
-			});
-			try {
-				await jobRepository.addSearchedJobs(savedJobs.map(toLegacyJob));
-			} catch (error) {
-				if (!isJobRepositoryCapacityError(error)) throw error;
-				log(
-					"AcquireJobs",
-					"Repository discovery capacity reached while restoring the acquisition checkpoint.",
-					"warn",
-				);
+			savedJobsBySource.set(source, sourceJobs);
+			initialCheckpointJobCounts.set(source, sourceJobs.length);
+			for (const job of sourceJobs) {
+				savedJobIds.add(job.id);
+			}
+			if (sourceJobs.length > 0) {
+				logger.info(`Resuming ${sourceJobs.length} jobs from ${file}.`, {
+					resumedCount: sourceJobs.length,
+					outputFile: file,
+				});
+				try {
+					await jobRepository.addSearchedJobs(sourceJobs.map(toLegacyJob));
+				} catch (error) {
+					if (!isJobRepositoryCapacityError(error)) throw error;
+					log(
+						"AcquireJobs",
+						"Repository discovery capacity reached while restoring the acquisition checkpoint.",
+						"warn",
+					);
+				}
 			}
 		}
 
@@ -408,12 +513,30 @@ export async function runAcquireJobs(
 		const disabledSources = new Set<AcquisitionSource>();
 		const cooldownUntilBySource = new Map<AcquisitionSource, number>();
 		const consecutiveFailuresBySource = new Map<AcquisitionSource, number>();
-		acquisitionLoop: for (const searchTerm of terms) {
+		const totalQueries = terms.length * queryLocations.length;
+		const acquisitionProgress = createProgressReporter(logger, {
+			label: "Stage 1/8: AcquireJobs",
+			unitLabel: "query",
+			totalUnits: totalQueries,
+			maxUpdates: Math.max(1, totalQueries),
+		});
+		acquisitionProgress.start({
+			searchTerms: terms.length,
+			locations: queryLocations.length,
+		});
+		for (const searchTerm of terms) {
 			for (const location of queryLocations) {
+				throwIfCancelled(argv.signal);
 				let activeSources = sources.filter(
 					(source) => !disabledSources.has(source),
 				);
-				if (activeSources.length === 0) break acquisitionLoop;
+				if (activeSources.length === 0) {
+					acquisitionProgress.complete(
+						{ searchTerm, location, outcome: "skipped" },
+						{ level: "warn", suffix: "no active providers" },
+					);
+					continue;
+				}
 
 				const now = Date.now();
 				const coolingSources = activeSources.filter(
@@ -443,13 +566,19 @@ export async function runAcquireJobs(
 						`All active providers are cooling down; waiting ${Math.ceil(waitMs / 1000)}s before retrying this query.`,
 						"warn",
 					);
-					await new Promise((resolve) => setTimeout(resolve, waitMs));
+					await abortableDelay(waitMs, argv.signal);
 					activeSources = sources.filter(
 						(source) =>
 							!disabledSources.has(source) &&
 							(cooldownUntilBySource.get(source) ?? 0) <= Date.now(),
 					);
-					if (activeSources.length === 0) continue;
+					if (activeSources.length === 0) {
+						acquisitionProgress.complete(
+							{ searchTerm, location, outcome: "skipped" },
+							{ level: "warn", suffix: "providers unavailable" },
+						);
+						continue;
+					}
 				}
 				log(
 					"AcquireJobs",
@@ -462,8 +591,12 @@ export async function runAcquireJobs(
 					location,
 					distance: argv.distance,
 					resultsWanted: argv["results-wanted"],
-					hoursOld: argv["hours-old"] || undefined,
-					isRemote: isRemoteOnly ? true : argv.remote || undefined,
+					hoursOld: argv["hours-old"],
+					isRemote: isRemoteOnly
+						? true
+						: argv.remote === true
+							? true
+							: undefined,
 					remoteOnly: isRemoteOnly || undefined,
 					jobType: argv["job-type"] as
 						| "fulltime"
@@ -481,7 +614,10 @@ export async function runAcquireJobs(
 						| "plain",
 					proxies: parseList(argv.proxies),
 					userAgent: argv["user-agent"],
+					showFetchUrl,
+					signal: argv.signal,
 				});
+				throwIfCancelled(argv.signal);
 				stats.endTimer(timer);
 				stats.incrementCounter("network.connections", activeSources.length);
 				const failedSources = new Set(
@@ -547,16 +683,36 @@ export async function runAcquireJobs(
 				const newJobs = deduplicateJobs(candidateJobs).filter(
 					(job) =>
 						!savedJobIds.has(job.id) &&
-						!jobRepository?.isJobSeen(toLegacyJob(job)),
+						!jobRepository?.isJobMatched(toLegacyJob(job)),
 				);
-				if (newJobs.length === 0) continue;
+				if (newJobs.length === 0) {
+					acquisitionProgress.complete(
+						{
+							searchTerm,
+							location,
+							providers: activeSources,
+							candidateJobs: candidateJobs.length,
+							newJobs: 0,
+							outcome: "completed",
+						},
+						{ suffix: "no new jobs" },
+					);
+					continue;
+				}
 
 				// Persist the artifact before the repository marker so an interrupted run
 				// can resume from the same output file without losing completed work.
-				savedJobs = [...savedJobs, ...newJobs];
-				await writeAcquisitionCheckpoint(outputFile, savedJobs);
+				for (const source of sources) {
+					const sourceNewJobs = newJobs.filter((job) => job.source === source);
+					if (sourceNewJobs.length === 0) continue;
+					const current = savedJobsBySource.get(source) ?? [];
+					const updated = [...current, ...sourceNewJobs];
+					savedJobsBySource.set(source, updated);
+					const file = resolvedOutputFiles[source];
+					await writeAcquisitionCheckpoint(file, updated);
+					stats.incrementCounter("files.written", 1);
+				}
 				for (const job of newJobs) savedJobIds.add(job.id);
-				stats.incrementCounter("files.written", 1);
 				try {
 					const recorded = await jobRepository.addSearchedJobs(
 						newJobs.map(toLegacyJob),
@@ -569,9 +725,26 @@ export async function runAcquireJobs(
 						{ jobCount: newJobs.length },
 					);
 				}
+				acquisitionProgress.complete({
+					searchTerm,
+					location,
+					providers: activeSources,
+					candidateJobs: candidateJobs.length,
+					newJobs: newJobs.length,
+					outcome: "completed",
+				});
 			}
 		}
-		if (savedJobs.length === 0 && providerFailures.length > 0) {
+
+		let totalSavedJobs = 0;
+		let totalInitialJobs = 0;
+		for (const source of sources) {
+			const count = (savedJobsBySource.get(source) ?? []).length;
+			totalSavedJobs += count;
+			totalInitialJobs += initialCheckpointJobCounts.get(source) ?? 0;
+		}
+
+		if (totalSavedJobs === 0 && providerFailures.length > 0) {
 			throw new Error(
 				`No jobs were acquired because every active provider failed. First failure: ${providerFailures[0].source}: ${providerFailures[0].message}`,
 			);
@@ -580,23 +753,35 @@ export async function runAcquireJobs(
 		stats.incrementCounter("data.recordsProcessed", acquiredCount);
 		stats.incrementCounter(
 			"data.duplicatesRemoved",
-			acquiredCount - (savedJobs.length - initialCheckpointJobCount),
+			acquiredCount - (totalSavedJobs - totalInitialJobs),
 		);
-		stats.recordSuccess("acquire-jobs.complete", {
-			outputFile,
-			jobs: savedJobs.length,
-			sources,
-			terms: terms.length,
-		});
-		savedJobsCount = savedJobs.length;
-		logger.success(
-			`Wrote ${savedJobs.length} canonical jobs to ${outputFile}`,
-			{
-				count: savedJobs.length,
-				outputFile,
-				durationMs: Math.round(performance.now() - started),
-			},
-		);
+
+		for (const source of sources) {
+			const file = resolvedOutputFiles[source];
+			const sourceJobs = savedJobsBySource.get(source) ?? [];
+			try {
+				await fs.access(file);
+			} catch {
+				await writeAcquisitionCheckpoint(file, sourceJobs);
+			}
+			stats.recordSuccess("acquire-jobs.complete", {
+				source,
+				outputFile: file,
+				jobs: sourceJobs.length,
+				sources,
+				terms: terms.length,
+			});
+			logger.success(
+				`Wrote ${sourceJobs.length} canonical ${source} jobs to ${file}`,
+				{
+					source,
+					count: sourceJobs.length,
+					outputFile: file,
+					durationMs: Math.round(performance.now() - started),
+				},
+			);
+		}
+		savedJobsCount = totalSavedJobs;
 	} catch (error) {
 		const normalized =
 			error instanceof Error ? error : new Error(String(error));
@@ -607,7 +792,10 @@ export async function runAcquireJobs(
 		if (jobRepository) await jobRepository.close();
 		const summary = stats.endCollection();
 		logger.info("Final statistics", { summary });
-		await closeFileLogging();
 	}
-	return { outputFile, jobs: savedJobsCount };
+	return {
+		outputFile: resolvedOutputFiles[sources[0]] ?? outputFile,
+		outputFiles: sources.map((s) => resolvedOutputFiles[s]),
+		jobs: savedJobsCount,
+	};
 }

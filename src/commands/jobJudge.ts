@@ -9,15 +9,16 @@ import { JobRepository } from "../jobRepository";
 import { type LLMRequest, llmService } from "../llmService";
 import type { JobInterface } from "../models";
 import {
+	abortableDelay,
+	rethrowIfCancelled,
+	throwIfCancelled,
+} from "../pipelineCancellation";
+import {
 	loadAndReplacePromptTemplate,
 	loadPresets,
 	loadVeritasSystemPrompt,
 } from "../presets";
-import {
-	getDataDirectory,
-	getLogsDirectory,
-	getProjectDirectory,
-} from "../runtimePaths";
+import { getDataDirectory, getProjectDirectory } from "../runtimePaths";
 import {
 	checkStageCheckpoint,
 	completeStageCheckpoint,
@@ -27,15 +28,12 @@ import {
 import { createStatisticsCollector } from "../statistics";
 import type { GlobalArgs, JobJudgeArgs, Preset } from "../types";
 import { getPreset } from "../types";
+import { createLogger, formatDate, log } from "../utils";
+import { createProgressReporter } from "../utils/progress";
 import {
-	closeFileLogging,
-	createLogger,
-	formatDate,
-	initializeFileLogging,
-	log,
-} from "../utils";
-import { loadApplicationData } from "../utils/sharedCommandUtils";
-import { withSpinner } from "../utils/spinner";
+	loadApplicationData,
+	normalizeJobAnalysisRecord,
+} from "../utils/sharedCommandUtils";
 
 const logger = createLogger("JobJudge");
 
@@ -60,45 +58,86 @@ const ConfidenceCoerce = z.preprocess((val) => {
 	return num;
 }, z.number().min(0).max(1).default(0));
 
-const JobAnalysisSchema = z
-	.object({
-		jobTitle: z.string().optional(),
-		job_title: z.string().optional(),
-		title: z.string().optional(),
-		isVeryHighlyAligned: BooleanCoerce,
-		isWorthInvestigating: BooleanCoerce,
-		isHighlyAligned: BooleanCoerce,
-		rationale: z.string().optional().default(""),
-		confidence: ConfidenceCoerce,
-	})
-	.refine((data) => Boolean(data.jobTitle || data.job_title || data.title), {
-		message: "jobTitle, job_title, or title is required",
-	})
-	.transform((data) => {
-		const isAligned = Boolean(
-			data.isVeryHighlyAligned ??
-				data.isWorthInvestigating ??
-				data.isHighlyAligned ??
-				false,
-		);
-		return {
-			jobTitle: data.jobTitle ?? data.job_title ?? data.title ?? "",
-			isVeryHighlyAligned: isAligned,
-			isWorthInvestigating: isAligned,
-			isHighlyAligned: isAligned,
-			rationale: data.rationale,
-			confidence: data.confidence,
-		};
-	});
-const JobAnalysisResultsSchema = z.union([
-	z.array(JobAnalysisSchema).min(1),
+export const JobAnalysisSchema = z.preprocess(
+	normalizeJobAnalysisRecord,
 	z
 		.object({
-			jobs: z.array(JobAnalysisSchema).min(1).optional(),
-			results: z.array(JobAnalysisSchema).min(1).optional(),
-			evaluations: z.array(JobAnalysisSchema).min(1).optional(),
-			data: z.array(JobAnalysisSchema).min(1).optional(),
+			jobTitle: z.string().optional(),
+			job_title: z.string().optional(),
+			title: z.string().optional(),
+			isVeryHighlyAligned: BooleanCoerce,
+			isWorthInvestigating: BooleanCoerce,
+			isHighlyAligned: BooleanCoerce,
+			rationale: z.string().optional().default(""),
+			confidence: ConfidenceCoerce,
 		})
+		.passthrough()
+		.refine((data) => Boolean(data.jobTitle || data.job_title || data.title), {
+			message: "jobTitle, job_title, or title is required",
+		})
+		.transform((data) => {
+			const isAligned = Boolean(
+				data.isVeryHighlyAligned ??
+					data.isWorthInvestigating ??
+					data.isHighlyAligned ??
+					false,
+			);
+			return {
+				jobTitle: data.jobTitle ?? data.job_title ?? data.title ?? "",
+				isVeryHighlyAligned: isAligned,
+				isWorthInvestigating: isAligned,
+				isHighlyAligned: isAligned,
+				rationale: data.rationale,
+				confidence: data.confidence,
+			};
+		}),
+);
+
+export const SplitTwoObjectJobAnalysisSchema = z
+	.array(z.record(z.unknown()))
+	.length(2)
+	.refine(
+		([objA, objB]) => {
+			const merged = normalizeJobAnalysisRecord({
+				...objA,
+				...objB,
+			}) as Record<string, unknown>;
+			const hasTitle = Boolean(
+				merged.jobTitle || merged.job_title || merged.title,
+			);
+			const hasAlignment =
+				"isVeryHighlyAligned" in merged ||
+				"isWorthInvestigating" in merged ||
+				"isHighlyAligned" in merged;
+			const hasRationale = "rationale" in merged;
+			const hasConfidence = "confidence" in merged;
+			return hasTitle && hasAlignment && hasRationale && hasConfidence;
+		},
+		{
+			message:
+				"Across the two objects, required keys (jobTitle/title, isVeryHighlyAligned, rationale, confidence) must be present",
+		},
+	)
+	.transform(([objA, objB]) => {
+		const merged = { ...objA, ...objB };
+		return [JobAnalysisSchema.parse(merged)];
+	});
+
+export const JobAnalysisArrayOrSplitSchema = z.union([
+	z.array(JobAnalysisSchema).min(1),
+	SplitTwoObjectJobAnalysisSchema,
+]);
+
+export const JobAnalysisResultsSchema = z.union([
+	JobAnalysisArrayOrSplitSchema,
+	z
+		.object({
+			jobs: JobAnalysisArrayOrSplitSchema.optional(),
+			results: JobAnalysisArrayOrSplitSchema.optional(),
+			evaluations: JobAnalysisArrayOrSplitSchema.optional(),
+			data: JobAnalysisArrayOrSplitSchema.optional(),
+		})
+		.passthrough()
 		.refine(
 			(obj) => Boolean(obj.jobs || obj.results || obj.evaluations || obj.data),
 			{ message: "Expected jobs, results, evaluations, or data array" },
@@ -108,7 +147,7 @@ const JobAnalysisResultsSchema = z.union([
 		),
 	JobAnalysisSchema.transform((single) => [single]),
 ]);
-type JobAnalysisResult = z.infer<typeof JobAnalysisSchema>;
+export type JobAnalysisResult = z.infer<typeof JobAnalysisSchema>;
 
 export type JudgeCli = GlobalArgs &
 	JobJudgeArgs & {
@@ -117,7 +156,6 @@ export type JudgeCli = GlobalArgs &
 		"use-jobdb": boolean;
 		"max-tokens"?: number;
 		"strict-parsing": boolean;
-		"log-payload": boolean;
 		sleep: number;
 		"eval-mode": number;
 		"hide-reasoning"?: boolean;
@@ -200,11 +238,13 @@ function withStableId(job: JobInterface, filePath: string): JobInterface {
 	};
 }
 
-function isIndeedJob(job: JobInterface): boolean {
+function isPipelineJob(job: JobInterface): boolean {
 	try {
 		return (
 			job.source === "indeed" ||
-			new URL(job.url).hostname.endsWith("indeed.com")
+			job.source === "linkedin" ||
+			new URL(job.url).hostname.endsWith("indeed.com") ||
+			new URL(job.url).hostname.endsWith("linkedin.com")
 		);
 	} catch {
 		return false;
@@ -213,6 +253,27 @@ function isIndeedJob(job: JobInterface): boolean {
 
 function safeFileName(job: JobInterface): string {
 	return (job.sourceJobId || job.id || "job").replace(/[^a-zA-Z0-9_-]/g, "_");
+}
+
+export function sanitizeJobForEvaluation(
+	job: JobInterface,
+): Omit<
+	JobInterface,
+	| "confidence"
+	| "rationale"
+	| "isWorthInvestigating"
+	| "isVeryHighlyAligned"
+	| "isHighlyAligned"
+> {
+	const {
+		confidence: _c,
+		rationale: _r,
+		isWorthInvestigating: _w,
+		isVeryHighlyAligned: _va,
+		isHighlyAligned: _ha,
+		...cleanJob
+	} = job;
+	return cleanJob;
 }
 
 async function evaluate(
@@ -226,8 +287,10 @@ async function evaluate(
 	fallbackUsed: boolean;
 	retries: number;
 }> {
+	const cleanJob = sanitizeJobForEvaluation(job);
+	const { remoteOk: _remoteOk, ...llmBoundJob } = cleanJob;
 	const prompt = await loadAndReplacePromptTemplate(preset.promptTemplate, {
-		targJD: JSON.stringify(job, null, 2),
+		targJD: JSON.stringify(llmBoundJob, null, 2),
 		myResume: appData.resume,
 		myTestimonials: appData.testimonials,
 	});
@@ -271,38 +334,24 @@ async function evaluate(
 		...(effectiveReasoningEffort !== undefined
 			? { reasoning_effort: effectiveReasoningEffort }
 			: {}),
+		...(argv.providerRouting ? { providerRouting: argv.providerRouting } : {}),
 	};
-
-	if (argv["log-payload"]) {
-		const payloadPath = path.join(
-			String(argv.logDir ?? getLogsDirectory()),
-			`indeed_${safeFileName(job)}_payload_${formatDate(new Date(), "yyyyMMdd_HHmmss")}.json`,
-		);
-		await fs.mkdir(path.dirname(payloadPath), { recursive: true });
-		await fs.writeFile(payloadPath, JSON.stringify(request, null, 2), {
-			encoding: "utf8",
-			mode: 0o600,
-		});
-	}
 
 	let lastError: unknown;
 	for (let attempt = 0; attempt < 3; attempt++) {
+		throwIfCancelled(argv.signal);
 		try {
-			const response = await withSpinner(
-				`Waiting for LLM evaluation of ${job.title} (${attempt + 1}/3)...`,
-				() => llmService.call(request),
-				{
-					enabled: !request.showReasoningTokens && !request.showResponseStream,
-				},
-			);
+			const response = await llmService.call(request, {
+				payloadLogStage: "jobJudge",
+				...(argv.signal ? { signal: argv.signal } : {}),
+			});
 			const results = JobAnalysisResultsSchema.parse(response.content);
 			return { result: results[0], fallbackUsed: false, retries: attempt };
 		} catch (error) {
+			rethrowIfCancelled(error, argv.signal);
 			lastError = error;
 			if (attempt < 2) {
-				await new Promise((resolve) =>
-					setTimeout(resolve, 2 ** (attempt + 1) * 1000),
-				);
+				await abortableDelay(2 ** (attempt + 1) * 1000, argv.signal);
 			}
 		}
 	}
@@ -331,14 +380,13 @@ export function addJobJudgeCommand(
 	return yargs.command({
 		command: "jobJudge",
 		describe:
-			"Evaluate Indeed job descriptions and write passing and failing results.",
+			"Evaluate job descriptions and write passing and failing results.",
 		builder: (yy) =>
 			(yy as Argv<JudgeCli>)
 				.option("input-file", {
 					type: "string",
 					default: "./data/clothed_jobs_*.json",
-					description:
-						"Indeed job artifact, directory, or wildcard to evaluate.",
+					description: "Job artifact, directory, or wildcard to evaluate.",
 				})
 				.option("preset", {
 					type: "string",
@@ -356,12 +404,6 @@ export function addJobJudgeCommand(
 				.option("strict-parsing", { type: "boolean", default: false })
 				.option("use-jobdb", { type: "boolean", default: true })
 				.option("max-tokens", { type: "number" })
-				.option("log-payload", {
-					type: "boolean",
-					default: false,
-					description:
-						"Save sensitive outbound LLM payloads (owner-readable only).",
-				})
 				.option("show-reasoning", {
 					alias: "sr",
 					type: "boolean",
@@ -412,23 +454,16 @@ export async function runJobJudge(
 	argv: JudgeCli,
 ): Promise<{ jobs: number; passed: number }> {
 	const stats = createStatisticsCollector("jobJudge");
+	throwIfCancelled(argv.signal);
 	stats.startCollection();
 	const dataDirectory =
 		argv["output-file"] && argv["output-file"] !== "./data/astroapply_eval_"
 			? path.dirname(argv["output-file"])
 			: getDataDirectory();
-	const defaultLogDirectory = getLogsDirectory();
 	let repository: JobRepository | undefined;
 	let passed = 0;
 	let totalJobsCount = 0;
 	try {
-		if (!argv.disableFileLogging) {
-			initializeFileLogging(
-				String(argv.logDir ?? defaultLogDirectory),
-				`${formatDate(new Date(), "yyyyMMdd_HHmmss")}_jobJudge_${String(argv.logFile ?? "astroex.log")}`,
-				"JobJudge",
-			);
-		}
 		const presets = await loadPresets();
 		if (!argv.preset) throw new Error("--preset is required");
 		const preset = getPreset("jobJudge", argv.preset, presets);
@@ -447,6 +482,14 @@ export async function runJobJudge(
 			preset: preset.name,
 			...(effectiveReasoningEffort
 				? { reasoning_effort: effectiveReasoningEffort }
+				: {}),
+			...(argv.providerRouting?.only?.length
+				? { "jj-provider": argv.providerRouting.only.join(",") }
+				: {}),
+			...(argv.providerRouting?.quantizations?.length
+				? {
+						"jj-provider-quant": argv.providerRouting.quantizations.join(","),
+					}
 				: {}),
 		});
 		llmService.initialize(
@@ -487,8 +530,49 @@ export async function runJobJudge(
 		if (files.length === 0)
 			throw new Error(`No files matched ${argv["input-file"]}`);
 
+		let totalJobsToJudge = 0;
+		for (const file of files) {
+			throwIfCancelled(argv.signal);
+			try {
+				let fileHash = "";
+				try {
+					fileHash = await computeFileHash(file);
+				} catch {
+					fileHash = "";
+				}
+				const checkpoint = fileHash
+					? await checkStageCheckpoint(
+							"jobJudge",
+							file,
+							passDir,
+							preset.name,
+							preset.modelId,
+							repository,
+						)
+					: undefined;
+				if (checkpoint?.isCompleted) {
+					continue;
+				}
+
+				const parsed = parseJobFile(await fs.readFile(file, "utf8"), file);
+				for (const job of parsed) {
+					if (isPipelineJob(job)) {
+						totalJobsToJudge++;
+					}
+				}
+			} catch {
+				// File reading errors will be handled during main processing
+			}
+		}
+
 		const appData = await loadApplicationData();
 		const veritasSystemPrompt = await loadVeritasSystemPrompt();
+		const evaluationProgress = createProgressReporter(logger, {
+			label: "Stage 6/8: JobJudge",
+			unitLabel: "job",
+			totalUnits: totalJobsToJudge,
+			maxUpdates: Math.max(1, totalJobsToJudge),
+		});
 
 		for (const file of files) {
 			let fileHash = "";
@@ -526,12 +610,14 @@ export async function runJobJudge(
 			stats.incrementCounter("files.read", 1);
 			const fileJobs: JobInterface[] = [];
 			for (const job of parsed) {
-				if (isIndeedJob(job)) fileJobs.push(job);
-				else
-					log("JobJudge", "Skipped retired non-Indeed artifact", "warn", {
+				if (isPipelineJob(job)) {
+					fileJobs.push(job);
+				} else {
+					log("JobJudge", "Skipped retired non-pipeline artifact", "warn", {
 						file,
 						id: job.id,
 					});
+				}
 			}
 			totalJobsCount += fileJobs.length;
 			stats.incrementCounter("data.recordsProcessed", fileJobs.length);
@@ -551,6 +637,7 @@ export async function runJobJudge(
 			}
 
 			for (const job of fileJobs) {
+				throwIfCancelled(argv.signal);
 				if (checkpoint.processedJobIds.has(job.id)) {
 					log(
 						"JobJudge",
@@ -558,22 +645,29 @@ export async function runJobJudge(
 						"debug",
 						{ id: job.id },
 					);
+					evaluationProgress.complete(
+						{ jobId: job.id, jobTitle: job.title, outcome: "checkpoint_skip" },
+						{ suffix: "already judged from checkpoint" },
+					);
 					continue;
 				}
 				const identity = {
 					id: job.id,
-					source: "indeed" as const,
+					source: (job.source === "linkedin" ? "linkedin" : "indeed") as
+						| "indeed"
+						| "linkedin",
 					sourceJobId: job.sourceJobId,
 					title: job.title,
 					company: job.company,
 					url: job.url,
 				};
 				const fileName = `${safeFileName(job)}.json`;
+				const cleanJobRecord = sanitizeJobForEvaluation(job);
 				if (repository.isJobMatched(identity)) {
 					await fs.writeFile(
 						path.join(dupeDir, fileName),
 						JSON.stringify(
-							{ ...job, evaluationResult: { duplicate: true } },
+							{ ...cleanJobRecord, evaluationResult: { duplicate: true } },
 							null,
 							2,
 						),
@@ -589,10 +683,14 @@ export async function runJobJudge(
 							job.id,
 						);
 					}
+					evaluationProgress.complete(
+						{ jobId: job.id, jobTitle: job.title, outcome: "duplicate" },
+						{ suffix: "duplicate skipped" },
+					);
 					continue;
 				}
 				if (!job.descriptionText?.trim()) {
-					log("JobJudge", "Skipped Indeed job without a description", "warn", {
+					log("JobJudge", "Skipped job without a description", "warn", {
 						id: job.id,
 					});
 					stats.incrementCounter("data.recordsFiltered", 1);
@@ -605,6 +703,10 @@ export async function runJobJudge(
 							job.id,
 						);
 					}
+					evaluationProgress.complete(
+						{ jobId: job.id, jobTitle: job.title, outcome: "no_description" },
+						{ level: "warn", suffix: "no description skipped" },
+					);
 					continue;
 				}
 				const started = performance.now();
@@ -618,8 +720,21 @@ export async function runJobJudge(
 				);
 				stats.incrementCounter("api.successfulCalls", 1);
 				stats.recordHistogram("api.responseTime", performance.now() - started);
+				evaluationProgress.complete(
+					{
+						jobId: job.id,
+						jobTitle: job.title,
+						outcome: outcome.fallbackUsed ? "fallback" : "evaluated",
+					},
+					outcome.fallbackUsed
+						? {
+								level: "warn",
+								suffix: "conservative fallback",
+							}
+						: undefined,
+				);
 				const output = {
-					...job,
+					...cleanJobRecord,
 					evaluationResult: {
 						mode: argv["eval-mode"],
 						isPass: outcome.result.isVeryHighlyAligned,
@@ -648,7 +763,7 @@ export async function runJobJudge(
 						retries: outcome.retries,
 					},
 				);
-				await repository.addJob(identity);
+				if (!outcome.fallbackUsed) await repository.addJob(identity);
 				if (fileHash) {
 					repository.recordJobInCheckpoint(
 						"jobJudge",
@@ -661,11 +776,10 @@ export async function runJobJudge(
 				stats.incrementCounter("files.written", 1);
 				if (outcome.result.isVeryHighlyAligned) passed++;
 				if (argv.sleep > 0)
-					await new Promise((resolve) =>
-						setTimeout(resolve, argv.sleep * 1000),
-					);
+					await abortableDelay(argv.sleep * 1000, argv.signal);
 			}
 
+			throwIfCancelled(argv.signal);
 			if (fileHash) {
 				repository.completeStageCheckpoint(
 					"jobJudge",
@@ -690,17 +804,13 @@ export async function runJobJudge(
 			stats.export("json"),
 			{ encoding: "utf8", mode: 0o600 },
 		);
-		logger.success(
-			`Evaluated ${totalJobsCount} Indeed jobs; ${passed} passed.`,
-			{
-				evaluatedCount: totalJobsCount,
-				passedCount: passed,
-			},
-		);
+		logger.success(`Evaluated ${totalJobsCount} jobs; ${passed} passed.`, {
+			evaluatedCount: totalJobsCount,
+			passedCount: passed,
+		});
 	} finally {
 		if (repository) await repository.close();
 		stats.endCollection();
-		await closeFileLogging();
 	}
 	return { jobs: totalJobsCount, passed };
 }

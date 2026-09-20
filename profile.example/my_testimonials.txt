@@ -1,1 +1,7 @@
-Replace this text with verified professional testimonials, or leave the corresponding private profile file absent.
+"Alex is one of the most reliable and thorough engineers I have ever worked with. Whenever we faced challenging architectural scaling issues, Alex broke them down into clear, incremental milestones and delivered clean, highly maintainable solutions ahead of schedule."
+
+"An exceptional team player and mentor. Alex raised our entire engineering team's standard for code quality and test automation. The observability framework Alex built saved us dozens of hours during production deployments."
+
+"Alex combines strong technical ownership with great communication skills. In cross-functional meetings, Alex always translates complex technical trade-offs into practical product impact that everyone can understand and align with."
+
+"Working with Alex on our microservices migration was a fantastic experience. The attention to edge cases, system reliability, and zero-downtime cutovers made an otherwise daunting project go off without a hitch."

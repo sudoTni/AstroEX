@@ -37,7 +37,6 @@ export interface LogRecord {
 
 export interface LogOutputOptions {
 	console?: boolean;
-	file?: boolean;
 }
 
 export interface LogTimer {
@@ -80,8 +79,5 @@ export interface LoggingConfig {
 	minLevel: LogLevel;
 	format: LogFormat;
 	enableConsole: boolean;
-	enableFile: boolean;
 	useColor: boolean;
-	logDirectory?: string;
-	logFile?: string;
 }

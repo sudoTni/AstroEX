@@ -4,7 +4,6 @@
  * Formats structured LogRecords for terminal display or machine-readable JSONL.
  */
 
-import * as chalk from "chalk";
 import { LOG_GRADIENTS, type LogGradientKey, applyHsvFade } from "./fader";
 import type { LogLevel, LogRecord } from "./types";
 
@@ -76,6 +75,63 @@ function colorizeLevel(
 	return badge;
 }
 
+function fade(
+	text: string,
+	gradient: LogGradientKey,
+	useColor: boolean,
+	options: { bold?: boolean; dim?: boolean } = {},
+): string {
+	return applyHsvFade(text, gradient, {
+		useColor,
+		mode: "per-line",
+		...options,
+	});
+}
+
+function isSectionBoundary(message: string): boolean {
+	const trimmed = message.trim();
+	return (
+		/^={3,}.*={3,}$/.test(trimmed) ||
+		/^(?:stage \d+(?:\.\d+)?\/\d+:|phase \d+:)/i.test(trimmed)
+	);
+}
+
+function contextGradient(key: string, value: unknown): LogGradientKey {
+	const normalizedKey = key.toLowerCase();
+	if (
+		/(?:path|file|dir|directory|destination|url|uri)$/.test(normalizedKey) ||
+		(typeof value === "string" &&
+			(/^(?:[a-z]+:\/\/|[~/]|[a-z]:[\\/])/i.test(value) ||
+				value.includes("/") ||
+				/\.(?:json|jsonl|sqlite|log|txt|md)$/i.test(value)))
+	) {
+		return "path";
+	}
+	if (
+		/(?:id$)|(?:^|_)(?:preset|model|provider|source|stage|session|correlation)/.test(
+			normalizedKey,
+		)
+	) {
+		return "identifier";
+	}
+	if (typeof value === "number" || typeof value === "boolean") {
+		return "metric";
+	}
+	return "value";
+}
+
+function formatContextValue(
+	key: string,
+	value: unknown,
+	useColor: boolean,
+): string {
+	const rendered =
+		typeof value === "string" && value.includes(" ")
+			? `"${value}"`
+			: String(value);
+	return fade(rendered, contextGradient(key, value), useColor);
+}
+
 /**
  * Format context for human terminal view.
  */
@@ -94,22 +150,18 @@ function formatTerminalContext(
 	for (const [k, v] of Object.entries(context)) {
 		if (k === "durationMs" && typeof v === "number") {
 			const durStr = formatDuration(v) || `${Math.round(v)}ms`;
-			inlineParts.push(useColor ? chalk.yellow(`(${durStr})`) : `(${durStr})`);
+			inlineParts.push(fade(`(${durStr})`, "duration", useColor));
 		} else if (k === "error" && typeof v === "object" && v !== null) {
 			const errObj = v as { name?: string; message?: string; stack?: string };
 			const errMsg = errObj.message || String(v);
 			const errName = errObj.name || "Error";
-			multilineLines.push(
-				useColor
-					? chalk.red(`  ↳ ${errName}: ${errMsg}`)
-					: `  ↳ ${errName}: ${errMsg}`,
-			);
+			multilineLines.push(fade(`  ↳ ${errName}: ${errMsg}`, "error", useColor));
 			if (errObj.stack && typeof errObj.stack === "string") {
 				const stackLines = errObj.stack
 					.split("\n")
 					.slice(1, 5) // Up to 4 stack frames
 					.map((line) =>
-						useColor ? chalk.gray(`    ${line.trim()}`) : `    ${line.trim()}`,
+						fade(`    ${line.trim()}`, "diagnostic", useColor, { dim: true }),
 					);
 				multilineLines.push(...stackLines);
 			}
@@ -118,9 +170,8 @@ function formatTerminalContext(
 			typeof v === "number" ||
 			typeof v === "boolean"
 		) {
-			const keyStyled = useColor ? chalk.dim(`${k}=`) : `${k}=`;
-			const valStyled =
-				typeof v === "string" && v.includes(" ") ? `"${v}"` : String(v);
+			const keyStyled = fade(`${k}=`, "diagnostic", useColor, { dim: true });
+			const valStyled = formatContextValue(k, v, useColor);
 			inlineParts.push(`${keyStyled}${valStyled}`);
 		} else {
 			remaining[k] = v;
@@ -130,7 +181,7 @@ function formatTerminalContext(
 	if (Object.keys(remaining).length > 0) {
 		try {
 			const serialized = JSON.stringify(remaining);
-			inlineParts.push(useColor ? chalk.dim(serialized) : serialized);
+			inlineParts.push(fade(serialized, "diagnostic", useColor, { dim: true }));
 		} catch {
 			inlineParts.push("[complex-context]");
 		}
@@ -148,26 +199,25 @@ function formatTerminalContext(
  */
 export function formatTerminal(record: LogRecord, useColor: boolean): string {
 	const timestampStr = formatTimestamp(new Date(record.timestamp));
-	const timestamp = useColor ? chalk.dim(timestampStr) : timestampStr;
+	const timestamp = fade(timestampStr, "diagnostic", useColor, { dim: true });
 
 	const label = LEVEL_LABELS[record.level] || record.level.toUpperCase();
 	const levelBadge = colorizeLevel(record.level, label, useColor);
 
-	const componentBadge = useColor
-		? chalk.bold(`[${record.component}]`)
-		: `[${record.component}]`;
+	const componentBadge = fade(`[${record.component}]`, "component", useColor, {
+		bold: true,
+	});
 
 	let message = record.message;
 	if (useColor) {
-		if (record.level === "error" || record.level === "fatal") {
-			message = chalk.red(message);
-		} else if (record.level === "warn") {
-			message = chalk.yellow(message);
-		} else if (record.level === "success") {
-			message = chalk.green(message);
-		} else if (record.level === "debug" || record.level === "trace") {
-			message = chalk.gray(message);
-		}
+		if (record.level === "error" || record.level === "fatal")
+			message = fade(message, record.level, useColor);
+		else if (record.level === "warn" || record.level === "success")
+			message = fade(message, record.level, useColor);
+		else if (record.level === "debug" || record.level === "trace")
+			message = fade(message, "diagnostic", useColor, { dim: true });
+		else if (isSectionBoundary(message))
+			message = fade(message, "section", useColor, { bold: true });
 	}
 
 	const { inline, multiline } = formatTerminalContext(record.context, useColor);

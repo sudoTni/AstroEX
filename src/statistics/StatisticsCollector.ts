@@ -58,6 +58,7 @@ export interface StatisticsSummary {
 		failedCalls: number;
 		retries: number;
 		circuitBreakerTrips: number;
+		repetitionErrors: number;
 		responseTimes: number[];
 		averageResponseTime: number;
 		errorRate: number;
@@ -152,6 +153,7 @@ export class StatisticsCollector {
 		failedCalls: 0,
 		retries: 0,
 		circuitBreakerTrips: 0,
+		repetitionErrors: 0,
 		responseTimes: [] as number[],
 		errorRate: 0,
 		averageResponseTime: 0,
@@ -420,6 +422,8 @@ export class StatisticsCollector {
 				this.api.retries += value;
 			} else if (apiOperation === "circuitBreakerTrips") {
 				this.api.circuitBreakerTrips += value;
+			} else if (apiOperation === "repetitionErrors") {
+				this.api.repetitionErrors += value;
 			}
 		} else if (name.startsWith("data.")) {
 			const dataOperation = name.split(".")[1] as keyof typeof this.data;
@@ -751,6 +755,7 @@ export class StatisticsCollector {
 		lines.push(`API Failed Calls,${summary.api.failedCalls}`);
 		lines.push(`API Retries,${summary.api.retries}`);
 		lines.push(`API Circuit Breaker Trips,${summary.api.circuitBreakerTrips}`);
+		lines.push(`API Repetition Errors,${summary.api.repetitionErrors}`);
 		lines.push(
 			`API Average Response Time (ms),${summary.api.averageResponseTime}`,
 		);
@@ -844,6 +849,7 @@ export class StatisticsCollector {
 		markdown += `| Failed Calls | ${summary.api.failedCalls} |\n`;
 		markdown += `| Retries | ${summary.api.retries} |\n`;
 		markdown += `| Circuit Breaker Trips | ${summary.api.circuitBreakerTrips} |\n`;
+		markdown += `| Repetition Errors | ${summary.api.repetitionErrors} |\n`;
 		markdown += `| Average Response Time | ${summary.api.averageResponseTime.toFixed(2)}ms |\n`;
 		markdown += `| Error Rate | ${summary.api.errorRate.toFixed(2)}% |\n\n`;
 

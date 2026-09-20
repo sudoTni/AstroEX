@@ -23,7 +23,7 @@ export function isSensitiveKey(key: string): boolean {
 
 const STRING_SECRET_PATTERNS: Array<{ pattern: RegExp; replacement: string }> =
 	[
-		// URL-embedded basic authentication credentials
+		// URL basic auth: https://user:password@example.com
 		{
 			pattern: /(https?:\/\/)([^:\s@/]+):([^@\s/]+)@/g,
 			replacement: "$1$2:[redacted]@",

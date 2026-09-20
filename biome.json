@@ -13,6 +13,7 @@
 			"materials/**",
 			"materials-deployed/**",
 			"profile/**",
+			"personal_data/**",
 			"dist/**",
 			"coverage/**"
 		]

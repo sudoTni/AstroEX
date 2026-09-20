@@ -35,7 +35,7 @@ export const APP_DESCRIPTION =
 	"Indeed job acquisition, filtering, evaluation, and AI-powered application-material generation";
 
 /** Author information */
-export const AUTHOR = "AstroEX Contributors";
+export const AUTHOR = "tjenkel";
 
 /** Contributors */
 export const CONTRIBUTORS = [
@@ -52,7 +52,10 @@ export const LICENSE = "MIT";
 export const MIN_NODE_VERSION = "22.13.0";
 
 /** How long discovered or judged jobs remain protected from duplicate work. */
-export const JOB_DB_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
+export const MILLISECONDS_PER_DAY = 24 * 60 * 60 * 1000;
+export const DEFAULT_JOBCLOTH_COOL_OFF_DAYS = 30;
+export const JOB_DB_RETENTION_MS =
+	DEFAULT_JOBCLOTH_COOL_OFF_DAYS * MILLISECONDS_PER_DAY;
 
 // =============================================================================
 // PATH CONSTANTS
@@ -64,14 +67,11 @@ export const ROOT_DIR = path.resolve(__dirname, "..");
 /** Data directory path */
 export const DATA_DIR = path.join(ROOT_DIR, "data");
 
-/** Logs directory path */
-export const LOGS_DIR = path.join(ROOT_DIR, "logs");
-
 /** Materials directory path */
 export const MATERIALS_DIR = path.join(ROOT_DIR, "materials");
 
 /** External data directory path */
-export const EXTERNAL_DATA_DIR = path.join(ROOT_DIR, "profile");
+export const EXTERNAL_DATA_DIR = path.join(ROOT_DIR, "profile.example");
 
 /** Resume file path */
 export const RESUME_FILE_PATH = path.join(EXTERNAL_DATA_DIR, "my_resume.txt");
@@ -141,18 +141,9 @@ export const DEFAULT_JOB_PROCESSING_CONFIG = {
 	"ping-interval": 15,
 	"openai-timeout": 60,
 	verbose: false,
-	"log-payload": false,
 	removeDuplicates: true,
 	minConfidence: 0.7,
 	maxJobs: 1000,
-};
-
-/** Default logging configuration */
-export const DEFAULT_LOGGING_CONFIG = {
-	logDir: LOGS_DIR,
-	logFile: "astroex.log",
-	"disable-file-logging": false,
-	level: "info" as const,
 };
 
 /** Default performance configuration */

@@ -2,6 +2,7 @@ import * as path from "node:path";
 import type { Argv } from "yargs";
 import { JOB_DB_RETENTION_MS } from "../constants";
 import { JobRepository, type JobRepositoryHealth } from "../jobRepository";
+import { writeMachineJson } from "../logging";
 import { getDataDirectory } from "../runtimePaths";
 import type { GlobalArgs } from "../types";
 
@@ -26,14 +27,14 @@ export function addJobDbCommand(yargs: Argv<GlobalArgs>): Argv<GlobalArgs> {
 				if (argv.action === "backup") await repository.createBackup();
 				if (argv.action === "rotate-backups") {
 					const removed = await repository.rotateBackups(Number(argv.keep));
-					console.log(JSON.stringify({ removed, keep: argv.keep }, null, 2));
+					writeMachineJson({ removed, keep: argv.keep });
 					return;
 				}
 				const result =
 					argv.action === "status"
 						? repository.getStats()
 						: repository.verifyIntegrity();
-				console.log(JSON.stringify(result, null, 2));
+				writeMachineJson(result);
 				if (
 					argv.action === "verify" &&
 					(result as JobRepositoryHealth).integrity !== "ok"

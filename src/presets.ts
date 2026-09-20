@@ -106,16 +106,7 @@ export async function loadAndReplacePromptTemplate(
 ): Promise<string> {
 	const fullTemplatePath = path.join(__dirname, "..", templatePath);
 	try {
-		let rawTemplate = templateCache.get(fullTemplatePath);
-		if (rawTemplate === undefined) {
-			rawTemplate = await fs.readFile(fullTemplatePath, "utf-8");
-			templateCache.set(fullTemplatePath, rawTemplate);
-			log(
-				"Presets",
-				`Successfully loaded and processed prompt template: ${templatePath}`,
-				"debug",
-			);
-		}
+		const rawTemplate = await loadPromptTemplate(templatePath);
 
 		let promptContent = rawTemplate;
 		for (const [key, value] of Object.entries(placeholderData)) {
@@ -132,5 +123,30 @@ export async function loadAndReplacePromptTemplate(
 			{ error: errMsg },
 		);
 		throw new Error(`Failed to load or process prompt template: ${errMsg}`);
+	}
+}
+
+/** Loads a raw prompt template without interpolating any placeholders. */
+export async function loadPromptTemplate(
+	templatePath: string,
+): Promise<string> {
+	const fullTemplatePath = path.join(__dirname, "..", templatePath);
+	try {
+		let rawTemplate = templateCache.get(fullTemplatePath);
+		if (rawTemplate === undefined) {
+			rawTemplate = await fs.readFile(fullTemplatePath, "utf-8");
+			templateCache.set(fullTemplatePath, rawTemplate);
+			log(
+				"Presets",
+				`Successfully loaded prompt template: ${templatePath}`,
+				"debug",
+			);
+		}
+		return rawTemplate;
+	} catch (error: unknown) {
+		const errMsg = error instanceof Error ? error.message : String(error);
+		throw new Error(
+			`Failed to load prompt template ${templatePath}: ${errMsg}`,
+		);
 	}
 }

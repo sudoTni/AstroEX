@@ -2,139 +2,15 @@ import {
 	applyBannerRainbow,
 	applyRainbowText,
 	hsvToRgb,
+	isColorSupported,
 	log,
 	logError,
 } from "./logging";
 
-export { applyBannerRainbow, applyRainbowText, hsvToRgb };
-
-// --- Rainbow/Gradient Color Utilities ---
-
-/**
- * Interpolate between two RGB colors.
- * @param color1 [r,g,b] first color
- * @param color2 [r,g,b] second color
- * @param t interpolation factor [0,1]
- * @returns [r,g,b] interpolated color
- */
-function interpolateColor(
-	color1: [number, number, number],
-	color2: [number, number, number],
-	t: number,
-): [number, number, number] {
-	return [
-		Math.round(color1[0] + (color2[0] - color1[0]) * t),
-		Math.round(color1[1] + (color2[1] - color1[1]) * t),
-		Math.round(color1[2] + (color2[2] - color1[2]) * t),
-	];
-}
-
-/**
- * Generate a smooth gradient palette by interpolating between colors.
- * @param basePalette Original color palette
- * @param targetSteps Number of color steps to generate
- * @returns Smooth gradient palette
- */
-function generateSmoothGradient(
-	basePalette: [number, number, number][],
-	targetSteps = 50,
-): [number, number, number][] {
-	if (basePalette.length <= 1) {
-		return basePalette;
-	}
-
-	const smoothPalette: [number, number, number][] = [];
-	const totalSegments = basePalette.length - 1;
-
-	for (let seg = 0; seg < totalSegments; seg++) {
-		const color1 = basePalette[seg];
-		const color2 = basePalette[seg + 1];
-
-		// Steps for this segment
-		const stepsInSegment =
-			Math.floor((targetSteps / totalSegments) * (seg + 1)) -
-			Math.floor((targetSteps / totalSegments) * seg);
-
-		for (let i = 0; i < stepsInSegment; i++) {
-			const t = i / Math.max(1, stepsInSegment - 1);
-			smoothPalette.push(interpolateColor(color1, color2, t));
-		}
-	}
-
-	// Ensure we have exactly targetSteps colors
-	while (smoothPalette.length < targetSteps && smoothPalette.length < 200) {
-		const lastColor =
-			smoothPalette[smoothPalette.length - 1] ||
-			basePalette[basePalette.length - 1];
-		smoothPalette.push(lastColor);
-	}
-
-	return smoothPalette.slice(0, targetSteps);
-}
-
-/**
- * Apply a linear gradient from a palette to a string with smooth color transitions.
- * Handles empty strings and palette edge cases.
- */
-export function applyGradientText(
-	text: string,
-	palette: [number, number, number][],
-	useColor = true,
-): string {
-	if (!useColor || palette.length === 0 || !text) return text;
-
-	// Generate smooth gradient palette with many intermediate colors
-	const smoothPalette = generateSmoothGradient(palette, 50);
-
-	const n = text.length;
-	let out = "";
-	for (let i = 0; i < n; i++) {
-		const idx =
-			smoothPalette.length === 1
-				? 0
-				: Math.floor((i * (smoothPalette.length - 1)) / Math.max(1, n - 1));
-		const [r, g, b] = smoothPalette[idx];
-		out += `\x1b[38;2;${r};${g};${b}m${text[i]}\x1b[0m`;
-	}
-	return out;
-}
-
-// Color palettes (RGB arrays)
-export const paletteInfo: [number, number, number][] = [
-	[0, 206, 209], // Dark Turquoise
-	[0, 191, 255], // Deep Sky Blue
-	[30, 144, 255], // Dodger Blue
-	[0, 255, 127], // Spring Green
-	[64, 224, 208], // Turquoise
-	[127, 255, 212], // Aquamarine
-	[102, 205, 170], // Medium Aquamarine
-	[32, 178, 170], // Light Sea Green
-];
-
-export const paletteWarn: [number, number, number][] = [
-	[255, 215, 0], // Gold
-	[255, 165, 0], // Orange
-	[255, 140, 0], // Dark Orange
-	[255, 120, 0], // Burnt Orange
-	[255, 175, 25], // Amber
-	[255, 193, 37], // Goldenrod
-	[250, 250, 210], // Light Goldenrod
-	[240, 230, 140], // Khaki
-];
-
-export const paletteError: [number, number, number][] = [
-	[255, 0, 0], // Red
-	[220, 20, 60], // Crimson
-	[178, 34, 34], // Firebrick
-	[139, 0, 0], // Dark Red
-	[255, 69, 0], // Red-Orange
-	[255, 99, 71], // Tomato
-	[205, 92, 92], // Indian Red
-	[165, 0, 33], // Deep Red (replaces Light Coral for a less harsh end)
-];
+export { applyBannerRainbow, applyRainbowText, hsvToRgb, isColorSupported };
 
 /** Print the AstroEX banner with the screenshot-matched block/fade effect. */
-export function printBanner(useColor = true) {
+export function printBanner(useColor = isColorSupported()) {
 	const banner = `        ▄▄▄       ██████ ▄▄▄█████▓ ██▀███   ▒█████
        ▒████▄   ▒██    ▒ ▓  ██▒ ▓▒▓██ ▒ ██▒▒██▒  ██▒
        ▒██  ▀█▄ ░ ▓██▄   ▒ ▓██░ ▒░▓██ ░▄█ ▒▒██░  ██▒

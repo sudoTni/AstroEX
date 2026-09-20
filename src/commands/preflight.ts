@@ -4,6 +4,7 @@ import * as path from "node:path";
 import type { Argv } from "yargs";
 import { JOB_DB_RETENTION_MS } from "../constants";
 import { JobRepository } from "../jobRepository";
+import { writeMachineJson } from "../logging";
 import { loadPresets } from "../presets";
 import {
 	getDataDirectory,
@@ -11,17 +12,16 @@ import {
 	getMaterialsDirectory,
 	getProfileDirectory,
 } from "../runtimePaths";
-import type { GlobalArgs } from "../types";
+import type { GlobalArgs, PresetConfig } from "../types";
 
 export interface PreflightOptions {
 	nodeVersionRequired?: string;
 	requireApiKey?: boolean;
 	apiKey?: string;
-	requireIndeedApiKey?: boolean;
-	indeedApiKey?: string;
 	checkDeployment?: boolean;
 	deploymentDestination?: string;
 	selectedPresets?: string[];
+	selectedPresetCategories?: Partial<Record<keyof PresetConfig, string>>;
 	requiredProfileFiles?: string[];
 	checkWritableDirectories?: boolean;
 }
@@ -36,7 +36,6 @@ export interface PreflightResult {
 	selectedPresetsValid: boolean;
 	missingSelectedPresets: string[];
 	apiKeyPresent: boolean;
-	indeedApiKeyPresent: boolean;
 	deployment: {
 		enabled: boolean;
 		destinationSet: boolean;
@@ -179,6 +178,29 @@ export async function runPreflight(
 			);
 		}
 	}
+	if (options.selectedPresetCategories) {
+		for (const [category, presetName] of Object.entries(
+			options.selectedPresetCategories,
+		)) {
+			if (
+				presetName &&
+				!Object.prototype.hasOwnProperty.call(
+					presetsData[category as keyof PresetConfig] ?? {},
+					presetName,
+				)
+			) {
+				missingSelectedPresets.push(`${category}:${presetName}`);
+			}
+		}
+		if (
+			missingSelectedPresets.length > 0 &&
+			!errors.some((error) => error.startsWith("Selected presets"))
+		) {
+			errors.push(
+				`Selected presets not found in their config/presets.json categories: ${missingSelectedPresets.join(", ")}`,
+			);
+		}
+	}
 
 	// 5. API Key validation
 	const apiKey =
@@ -187,16 +209,6 @@ export async function runPreflight(
 	if (options.requireApiKey && !apiKeyPresent) {
 		errors.push(
 			"Missing required API key. Set AEX_OR_API_KEY or OPENAI_API_KEY in the environment or provide --api-key.",
-		);
-	}
-	const indeedApiKey =
-		options.indeedApiKey || process.env.ASTROEX_INDEED_API_KEY;
-	const indeedApiKeyPresent = Boolean(
-		indeedApiKey && indeedApiKey.trim().length > 0,
-	);
-	if (options.requireIndeedApiKey && !indeedApiKeyPresent) {
-		errors.push(
-			"Missing required Indeed client key. Set ASTROEX_INDEED_API_KEY in the environment.",
 		);
 	}
 
@@ -253,7 +265,6 @@ export async function runPreflight(
 		selectedPresetsValid: missingSelectedPresets.length === 0,
 		missingSelectedPresets,
 		apiKeyPresent,
-		indeedApiKeyPresent,
 		deployment: {
 			enabled: checkDeployment,
 			destinationSet,
@@ -293,11 +304,6 @@ export function addPreflightCommand(yargs: Argv<GlobalArgs>): Argv<GlobalArgs> {
 					description: "Enforce API key presence check.",
 					default: false,
 				})
-				.option("require-indeed-api-key", {
-					type: "boolean",
-					description: "Enforce Indeed client-key presence check.",
-					default: false,
-				})
 				.option("check-deployment", {
 					type: "boolean",
 					description: "Enforce deployment prerequisites check.",
@@ -314,12 +320,11 @@ export function addPreflightCommand(yargs: Argv<GlobalArgs>): Argv<GlobalArgs> {
 			const result = await runPreflight({
 				selectedPresets,
 				requireApiKey: Boolean(argv["require-api-key"]),
-				requireIndeedApiKey: Boolean(argv["require-indeed-api-key"]),
 				checkDeployment:
 					Boolean(argv["check-deployment"]) || process.env.AEX_DEPLOY === "1",
 			});
 
-			console.log(JSON.stringify(result, null, 2));
+			writeMachineJson(result);
 			if (!result.valid) {
 				process.exitCode = 1;
 			}

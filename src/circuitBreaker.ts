@@ -10,7 +10,7 @@
  * - Performance monitoring and metrics
  * - Graceful degradation for service unavailable scenarios
  *
- * @author AstroEX Contributors
+ * @author tjenkel
  * @license MIT
  * @since 3.2.0
  */

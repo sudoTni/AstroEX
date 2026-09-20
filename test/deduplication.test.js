@@ -21,7 +21,6 @@ test("logOnce and ScopedLogger infoOnce/debugOnce deduplicate identical keys", (
 	manager.configure({
 		minLevel: "debug",
 		enableConsole: false,
-		enableFile: false,
 	});
 
 	const records = [];
@@ -228,7 +227,6 @@ test("runJobCloth respects preset sampling parameters (temperature: 1.0, maxToke
 	try {
 		await runJobCloth(inputFile, outputFile, {
 			apiKey: "test-api-key",
-			resumeFile: path.resolve(__dirname, "../profile.example/my_resume.txt"),
 			preset: "jc_glm-5.3-flash",
 			batch: 10,
 		});

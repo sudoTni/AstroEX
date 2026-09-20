@@ -5,25 +5,33 @@
  * This module defines all TypeScript interfaces and types used throughout the application.
  * These types ensure type safety and consistent data structures across all modules.
  *
- * @author AstroEX Contributors
+ * @author tjenkel
  * @license MIT
  */
 
 import type { LogLevel } from "./logging/types";
 
+export interface OpenRouterProviderRouting {
+	only?: string[];
+	ignore?: string[];
+	quantizations?: string[];
+}
+
 export interface GlobalArgs {
-	logDir?: string;
-	logFile?: string;
 	logLevel?: LogLevel;
 	logFormat?: "pretty" | "json";
-	disableFileLogging?: boolean;
 	verbose?: boolean;
+	color?: boolean;
+	"no-color"?: boolean;
+	noColor?: boolean;
 	"show-reasoning"?: boolean;
 	"show-reasoning-tokens"?: boolean;
 	"hide-reasoning"?: boolean;
 	"hide-reasoning-tokens"?: boolean;
 	sr?: boolean;
 	hr?: boolean;
+	"show-fetch-url"?: boolean;
+	showFetchUrl?: boolean;
 }
 
 export interface JobClothArgs extends GlobalArgs {
@@ -39,7 +47,6 @@ export interface JobClothArgs extends GlobalArgs {
 	"max-tokens"?: number;
 	"ping-interval"?: number;
 	"openai-timeout"?: number;
-	"log-payload"?: boolean;
 	preset?: string;
 	provider?: string;
 	"show-reasoning"?: boolean;
@@ -54,6 +61,7 @@ export interface JobClothArgs extends GlobalArgs {
 	"jc-reasoning-effort"?: string;
 	"reasoning-effort"?: string;
 	reasoningEffort?: string;
+	providerRouting?: OpenRouterProviderRouting;
 }
 
 export interface JobJudgeArgs extends GlobalArgs {
@@ -69,7 +77,6 @@ export interface JobJudgeArgs extends GlobalArgs {
 	"max-tokens"?: number;
 	"ping-interval"?: number;
 	"openai-timeout"?: number;
-	"log-payload"?: boolean;
 	preset?: string;
 	provider?: string;
 	sleep?: number;
@@ -87,6 +94,24 @@ export interface JobJudgeArgs extends GlobalArgs {
 	"jj-reasoning-effort"?: string;
 	"reasoning-effort"?: string;
 	reasoningEffort?: string;
+	providerRouting?: OpenRouterProviderRouting;
+	signal?: AbortSignal;
+}
+
+export interface RemoteEvalArgs extends GlobalArgs {
+	apiKey: string;
+	inputFile: string;
+	outputFile: string;
+	preset: string;
+	sleep?: number;
+	strictParsing?: boolean;
+	showReasoning?: boolean;
+	showStream?: boolean;
+	reasoningLevel?: string;
+	providerRouting?: OpenRouterProviderRouting;
+	useCheckpoints?: boolean;
+	retryDelayMs?: number;
+	signal?: AbortSignal;
 }
 
 export interface ProcessDataArgs extends GlobalArgs {
@@ -105,7 +130,6 @@ export interface MakeMaterialsArgs extends GlobalArgs {
 	"input-file": string;
 	"output-file": string;
 	"cover-letter-length"?: number;
-	"log-payload"?: boolean;
 	preset?: string;
 	provider?: string;
 	model?: string;
@@ -121,6 +145,7 @@ export interface MakeMaterialsArgs extends GlobalArgs {
 	"mm-reasoning-effort"?: string;
 	"reasoning-effort"?: string;
 	reasoningEffort?: string;
+	providerRouting?: OpenRouterProviderRouting;
 }
 
 export interface PerformanceMetrics {
@@ -155,6 +180,7 @@ export interface LLMRequest {
 	hideReasoningTokens?: boolean;
 	showResponseStream?: boolean;
 	reasoning_effort?: string;
+	providerRouting?: OpenRouterProviderRouting;
 }
 
 export interface LLMResponse {
@@ -274,6 +300,7 @@ export interface Preset {
 
 export interface PresetConfig {
 	jobCloth: { [presetName: string]: Preset };
+	remoteEval: { [presetName: string]: Preset };
 	jobJudge: { [presetName: string]: Preset };
 	makeMaterials: { [presetName: string]: Preset };
 }
@@ -295,7 +322,7 @@ export function getAvailablePresets(
 }
 
 export function getCommandsWithPresets(): string[] {
-	return ["jobCloth", "jobJudge", "makeMaterials"];
+	return ["jobCloth", "remoteEval", "jobJudge", "makeMaterials"];
 }
 
 export function commandHasPresets(command: string): boolean {

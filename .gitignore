@@ -1,99 +1,30 @@
-# Dependencies and generated build output
-node_modules/
-dist/
-coverage/
-.nyc_output/
-*.tsbuildinfo
-*.lcov
-
-# Environment files and credentials
-.env
-.env.*
-!.env.example
-*.env
-!*.env.example
-.envrc
-.direnv/
-.npmrc
-.secrets/
-secrets/
-credentials*.json
-*.pem
-*.key
-*.p12
-*.pfx
-*.jks
-
-# AstroEX private profile and runtime state
-profile/
+# Local, privacy-sensitive runtime state. These paths are intentionally never
+# part of source control; use example configuration and fixtures instead.
 data/
 logs/
 materials/
 materials-deployed/
-*.sqlite
-*.sqlite-*
-*.db
-*.db-*
-*_payload_*.json
+profile/
+personal_data/
 debug_scrape_output.json
-
-# Local deployment and scratch automation
-deployMaterials.gs
-testie*.bash
-testicle.bash
-twoTesties.bash
-
-# Package archives, reports, and temporary files
-*.tgz
-*.tar.gz
-pack.json
-*.tmp
-*.temp
+*.sqlite*
 *.bak
-*.orig
-*.rej
-*~
-tmp/
-temp/
-*.pid
-*.pid.lock
-.node_repl_history
-astroex_ss*.png
-IMPROVEMENTS_SUMMARY.md
-REFACTORING_REPORT.md
-STATISTICS_FRAMEWORK_*.md
-codebase_analysis_report.md
-implementation_plan.md
-statistics_framework_design.md
-statistics_framework_summary.md
 
-# Tool caches
-.cache/
-.parcel-cache/
-.turbo/
-.eslintcache
-.stylelintcache
-.biomecache
-.npm/
-.pnpm-store/
-.yarn/cache/
-.yarn/unplugged/
+# Tool output & dependencies
+node_modules/
+dist/
+coverage/
+*.tsbuildinfo
+*.tgz
+*.log
+.env
+.env.*
+!.env.example
 
-# Editors and operating systems
-.vscode/
-.idea/
-.fleet/
-.history/
-*.code-workspace
-*.swp
-*.swo
+# OS & Editor files
 .DS_Store
 Thumbs.db
-Desktop.ini
-
-# Diagnostic logs
-*.log
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-pnpm-debug.log*
+.idea/
+.vscode/
+*.swp
+*~

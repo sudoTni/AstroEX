@@ -5,7 +5,7 @@
  * filtering, and LLM commands. It is deliberately small so the provider can
  * be replaced without changing those downstream stages.
  */
-export type AcquisitionSource = "indeed";
+export type AcquisitionSource = "indeed" | "linkedin";
 
 export type DescriptionRepresentation =
 	| "html"
@@ -63,6 +63,8 @@ export interface AcquisitionQuery {
 	descriptionFormat?: "markdown" | "html" | "plain";
 	proxies?: string[];
 	userAgent?: string;
+	showFetchUrl?: boolean;
+	signal?: AbortSignal;
 }
 
 export interface AcquisitionFailure {

@@ -67,7 +67,7 @@ test("Sensitive data redaction for keys, tokens, and credentials", () => {
 		"Bearer [redacted]",
 	);
 	assert.equal(
-		sanitizeString(`Key is sk-${"1234567890abcdef".repeat(2)} in config`),
+		sanitizeString("Key is sk-1234567890abcdef1234567890 in config"),
 		"Key is sk-[redacted] in config",
 	);
 	assert.equal(
@@ -76,11 +76,7 @@ test("Sensitive data redaction for keys, tokens, and credentials", () => {
 	);
 	assert.equal(
 		sanitizeString(
-			[
-				"Connected to https://admin:",
-				"superSecret123",
-				"@proxy.example.com:8080/path",
-			].join(""),
+			"Connected to https://admin:superSecret123@proxy.example.com:8080/path",
 		),
 		"Connected to https://admin:[redacted]@proxy.example.com:8080/path",
 	);
@@ -95,7 +91,7 @@ test("Sensitive data redaction for keys, tokens, and credentials", () => {
 
 test("Error sanitization preserves rich metadata and redacts secrets in messages", () => {
 	const innerError = new Error(
-		`Failed to connect with sk-${"1234567890abcdef".repeat(2)}`,
+		"Failed to connect with sk-1234567890abcdef1234567890",
 	);
 	const error = new Error("Provider request failed: 401 Unauthorized", {
 		cause: innerError,
@@ -156,7 +152,6 @@ test("Scoped logger, timers, and child loggers work seamlessly", async () => {
 	manager.configure({
 		minLevel: "trace",
 		enableConsole: false,
-		enableFile: false,
 	});
 
 	// Hook dispatch for testing
@@ -205,7 +200,6 @@ test("time and timeSync wrappers measure latency and log errors without swallowi
 	manager.configure({
 		minLevel: "trace",
 		enableConsole: false,
-		enableFile: false,
 	});
 	manager.dispatch = (record) => records.push(record);
 
@@ -247,7 +241,6 @@ test("Correlation context is propagated and isolated with withContext", () => {
 	manager.configure({
 		minLevel: "trace",
 		enableConsole: false,
-		enableFile: false,
 	});
 	manager.dispatch = (record) => records.push(record);
 

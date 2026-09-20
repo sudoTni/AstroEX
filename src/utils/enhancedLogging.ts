@@ -36,14 +36,12 @@ export interface LogEntry {
 export interface LoggingConfig {
 	level: LogLevel;
 	enableConsole: boolean;
-	enableFile: boolean;
 	correlationIdGenerator?: () => string;
 }
 
 const DEFAULT_CONFIG: LoggingConfig = {
 	level: LogLevel.INFO,
 	enableConsole: true,
-	enableFile: true,
 	correlationIdGenerator: () =>
 		Math.random().toString(36).substring(2, 15) +
 		Math.random().toString(36).substring(2, 15),
@@ -63,7 +61,6 @@ export function configureLogging(config: Partial<LoggingConfig>): void {
 		defaultLoggingManager.configure({
 			minLevel: levelMap[config.level],
 			enableConsole: config.enableConsole,
-			enableFile: config.enableFile,
 		});
 	}
 }

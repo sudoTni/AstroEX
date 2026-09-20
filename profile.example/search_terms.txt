@@ -1,2 +1,12 @@
-security engineer
-security analyst
+Senior Software Engineer
+Lead Software Engineer
+Staff Software Engineer
+Full Stack Engineer
+Backend Engineer
+Cloud Systems Engineer
+Distributed Systems Engineer
+TypeScript Engineer
+Node.js Engineer
+Platform Engineer
+Infrastructure Engineer
+Software Architect

@@ -12,6 +12,26 @@ const {
 const { buildPipelineConfig } = require("../dist/pipelineConfig");
 const { llmService } = require("../dist/llmService");
 
+async function captureConsole(run) {
+	const originalStdoutWrite = process.stdout.write;
+	const originalStderrWrite = process.stderr.write;
+	let output = "";
+	process.stdout.write = (chunk) => {
+		output += String(chunk);
+		return true;
+	};
+	process.stderr.write = (chunk) => {
+		output += String(chunk);
+		return true;
+	};
+	try {
+		return { result: await run(), output };
+	} finally {
+		process.stdout.write = originalStdoutWrite;
+		process.stderr.write = originalStderrWrite;
+	}
+}
+
 function makeJob(id, title, company, overrides = {}) {
 	return {
 		id: `indeed:${id}`,
@@ -100,14 +120,17 @@ test("deployMaterials uploads only .txt files directly to destination without co
 	await fs.writeFile(manifest2, '{"jobId":"1002"}', "utf8");
 
 	// Run deployMaterials
-	const result = await deployMaterials(
-		materialsDir,
-		deployedMaterialsDir,
-		destDir,
+	const { result, output: consoleOutput } = await captureConsole(() =>
+		deployMaterials(materialsDir, deployedMaterialsDir, destDir),
 	);
 
 	assert.equal(result.deployed, 2);
 	assert.equal(result.destination, destDir);
+	assert.match(
+		consoleOutput,
+		/Stage 8\/8: Deployment preparation progress initialized — tracking 2 planned materials\./,
+	);
+	assert.match(consoleOutput, /material 2\/2 complete \(100%\)/);
 
 	// Destination must contain ONLY the .txt files directly
 	const destEntries = await fs.readdir(destDir);
@@ -265,7 +288,7 @@ test("executePipeline end-to-end optional deployment stage uploads only .txt fil
 	);
 	await fs.writeFile(
 		path.join(profileDir, "my_resume.txt"),
-		"the candidate - Experienced Cloud Security Engineer.\n",
+		"Alex Morgan - Experienced Cloud Systems Engineer.\n",
 		"utf8",
 	);
 	await fs.writeFile(
@@ -343,10 +366,10 @@ test("executePipeline end-to-end optional deployment stage uploads only .txt fil
 		) {
 			return {
 				content: `# Resume Filename
-Candidate_Materials_Cloud_Security_Engineer
+Alex_Morgan_Materials_Cloud_Security_Engineer
 
 # Cover Letter Filename
-Candidate_Cover_Letter_Acme_Security.txt
+Alex_Morgan_Cover_Letter_Acme_Security.txt
 
 # Optimized & Tailored Professional Title
 Lead Cloud Security Engineer
@@ -379,7 +402,6 @@ Dear Hiring Team at Acme Security,\n\nI am thrilled to apply...`,
 	const config = buildPipelineConfig({
 		paths: {
 			dataDir,
-			logDir,
 			materialsDir,
 			deployedMaterialsDir,
 			profileDir,
@@ -401,6 +423,10 @@ Dear Hiring Team at Acme Security,\n\nI am thrilled to apply...`,
 			clean: false,
 			sleep: 0,
 		},
+		jobDefaults: {
+			apiKey: "mock-api-key",
+			sleep: 0,
+		},
 	});
 
 	const result = await executePipeline(config, {
@@ -414,12 +440,12 @@ Dear Hiring Team at Acme Security,\n\nI am thrilled to apply...`,
 	// Destination must contain ONLY the .txt file directly
 	const destContents = await fs.readdir(destDir);
 	assert.deepEqual(destContents, [
-		"Candidate_Materials_Cloud_Security_Engineer.txt",
+		"Alex_Morgan_Materials_Cloud_Security_Engineer.txt",
 	]);
 
 	// Verify no directories exist in destination
 	const destStat = await fs.stat(
-		path.join(destDir, "Candidate_Materials_Cloud_Security_Engineer.txt"),
+		path.join(destDir, "Alex_Morgan_Materials_Cloud_Security_Engineer.txt"),
 	);
 	assert.ok(destStat.isFile());
 
@@ -429,11 +455,13 @@ Dear Hiring Team at Acme Security,\n\nI am thrilled to apply...`,
 	const archivedJobDir = path.join(deployedMaterialsDir, archivedEntries[0]);
 	const archivedFiles = await fs.readdir(archivedJobDir);
 	assert.ok(
-		archivedFiles.includes("Candidate_Materials_Cloud_Security_Engineer.txt"),
+		archivedFiles.includes(
+			"Alex_Morgan_Materials_Cloud_Security_Engineer.txt",
+		),
 	);
 	assert.ok(
 		archivedFiles.includes(
-			"Candidate_Materials_Cloud_Security_Engineer.txt.manifest.json",
+			"Alex_Morgan_Materials_Cloud_Security_Engineer.txt.manifest.json",
 		),
 	);
 });

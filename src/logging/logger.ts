@@ -4,10 +4,12 @@
  * Provides structured, scoped, performant, and secure logging.
  */
 
+import { writeInternalConsoleFailure } from "./consoleOutput";
+import { isColorSupported } from "./fader";
 import { formatJson, formatTerminal } from "./formatter";
 import { isLogLevelEnabled, normalizeLogLevel } from "./levels";
 import { sanitizeContext, sanitizeError } from "./redaction";
-import { ConsoleTransport, FileTransport } from "./transports";
+import { ConsoleTransport } from "./transports";
 import type {
 	LegacyLogLevel,
 	LogContext,
@@ -231,7 +233,6 @@ export class LoggingManager {
 	private config: LoggingConfig;
 	private activeContext: LogContext = {};
 	private consoleTransport = new ConsoleTransport();
-	private fileTransport = new FileTransport();
 	private seenOnceKeys = new Set<string>();
 
 	constructor() {
@@ -264,17 +265,11 @@ export class LoggingManager {
 				? "json"
 				: "pretty";
 
-		const noColor =
-			Boolean(process.env.NO_COLOR) ||
-			Boolean(process.env.ASTROEX_NO_COLOR) ||
-			process.argv.includes("--no-color");
-
 		return {
 			minLevel,
 			format,
 			enableConsole: true,
-			enableFile: true,
-			useColor: !noColor,
+			useColor: isColorSupported(),
 		};
 	}
 
@@ -320,34 +315,18 @@ export class LoggingManager {
 		}
 	}
 
-	initializeFileLogging(
-		logDir: string,
-		fileName: string,
-		commandName?: string,
-	): string {
-		return this.fileTransport.initialize(logDir, fileName, commandName);
-	}
-
-	getLogFilePath(): string | null {
-		return this.fileTransport.getFilePath();
-	}
-
-	closeFileLogging(): Promise<void> {
-		return this.fileTransport.close();
-	}
-
 	createLogger(component: string, defaultContext?: LogContext): Logger {
 		return new ScopedLogger(component, defaultContext ?? {}, this);
 	}
 
 	dispatch(record: LogRecord, outputOptions: LogOutputOptions = {}): void {
 		if (!record.component || typeof record.component !== "string") {
-			process.stderr.write("[AstroEX] invalid log component\n");
+			writeInternalConsoleFailure("[AstroEX] invalid log component");
 			return;
 		}
 		if (!record.message || typeof record.message !== "string") {
-			process.stderr.write(
-				`[AstroEX] invalid log message for ${record.component}\n`,
+			writeInternalConsoleFailure(
+				`[AstroEX] invalid log message for ${record.component}`,
 			);
 			return;
 		}
@@ -388,14 +367,6 @@ export class LoggingManager {
 					? formatJson(cleanRecord)
 					: formatTerminal(cleanRecord, this.config.useColor);
 			this.consoleTransport.write(cleanRecord, formatted);
-		}
-
-		// Output to file
-		const shouldLogFile =
-			outputOptions.file !== false && this.config.enableFile;
-		if (shouldLogFile) {
-			const jsonLine = formatJson(cleanRecord);
-			this.fileTransport.write(cleanRecord, jsonLine);
 		}
 	}
 }
@@ -477,26 +448,6 @@ export function logError(
 			context as LogContext,
 		);
 	}
-}
-
-export function initializeFileLogging(
-	logDir: string,
-	fileName: string,
-	commandName?: string,
-): string {
-	return defaultLoggingManager.initializeFileLogging(
-		logDir,
-		fileName,
-		commandName,
-	);
-}
-
-export function closeFileLogging(): Promise<void> {
-	return defaultLoggingManager.closeFileLogging();
-}
-
-export function getLogFilePath(): string | null {
-	return defaultLoggingManager.getLogFilePath();
 }
 
 export function configureLogging(config: Partial<LoggingConfig>): void {

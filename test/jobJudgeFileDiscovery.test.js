@@ -93,13 +93,11 @@ test("runJobJudge accepts isWorthInvestigating from LLM response", async (t) => 
 			preset: "jep_glm-5.3-flash",
 			"use-jobdb": false,
 			"strict-parsing": false,
-			"log-payload": false,
 			sleep: 0,
 			"eval-mode": 1,
 			"show-reasoning": false,
 			"show-stream": false,
 			verbose: false,
-			logDir: path.join(testRoot, "logs"),
 		});
 
 		assert.equal(judgeResult.jobs, 1);

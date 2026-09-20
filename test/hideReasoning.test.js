@@ -164,14 +164,12 @@ test("runJobJudge respects hide-reasoning flag and suppresses reasoning tokens",
 			preset: "jep_glm-5.3-flash",
 			"use-jobdb": false,
 			"strict-parsing": false,
-			"log-payload": false,
 			sleep: 0,
 			"eval-mode": 1,
 			"show-reasoning": true,
 			"hide-reasoning": true,
 			"show-stream": false,
 			verbose: false,
-			logDir: path.join(testRoot, "logs"),
 		});
 
 		assert.ok(receivedRequest);

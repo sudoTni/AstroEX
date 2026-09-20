@@ -1,7 +1,7 @@
 {
 	"name": "astroex",
 	"version": "0.13.0",
-	"description": "Indeed job acquisition, filtering, evaluation, and materials-generation pipeline",
+	"description": "Multi-source job acquisition, filtering, evaluation, and tailored application materials generation pipeline",
 	"type": "commonjs",
 	"main": "dist/index.js",
 	"bin": {
@@ -10,13 +10,13 @@
 	"files": [
 		"dist",
 		"config",
-		"docs",
-		"profile.example",
 		"prompts",
 		"sysprompts",
+		"profile.example",
 		".env.example",
 		"README.md",
-		"LICENSE.md"
+		"LICENSE.md",
+		"THIRD_PARTY_NOTICES.md"
 	],
 	"scripts": {
 		"build": "rimraf dist && tsc",
@@ -41,12 +41,14 @@
 		"test:logging": "npm run build && node --test test/logging.test.js",
 		"test:jobcloth-payload": "npm run build && node --test test/jobClothPayload.test.js",
 		"test:remote-only": "npm run build && node --test test/remoteOnly.test.js",
-		"lint": "rimraf dist && biome check .",
-		"lint:fix": "rimraf dist && biome check --fix .",
-		"format": "rimraf dist && biome format --write .",
-		"format:check": "rimraf dist && biome format ."
+		"test:resume": "npm run build && node --test test/pipelineResume.test.js",
+		"test:makematerials-progress": "npm run build && node --test test/makeMaterialsProgress.test.js",
+		"lint": "rm -rf dist && biome check .",
+		"lint:fix": "rm -rf dist && biome check --fix .",
+		"format": "rm -rf dist && biome format --write .",
+		"format:check": "rm -rf dist && biome format ."
 	},
-	"author": "AstroEX Contributors",
+	"author": "tjenkel",
 	"contributors": [
 		{
 			"name": "llpujol",

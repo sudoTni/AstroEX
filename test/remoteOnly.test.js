@@ -11,10 +11,14 @@ const execFileAsync = promisify(execFile);
 const { IndeedProvider } = require("../dist/acquisition/jobspyProvider");
 const {
 	filterRemoteOnlyJobs,
+	resolveRemoteOnlyOption,
 	runAcquireJobs,
 } = require("../dist/commands/acquireJobs");
 const { processAcquiredJobs } = require("../dist/commands/processData");
 const { buildPipelineConfig } = require("../dist/pipelineConfig");
+const {
+	resolvePipelineAcquisitionInputFiles,
+} = require("../dist/commands/runPipeline");
 
 function createMockJob(id, isRemoteVal, overrides = {}) {
 	const job = {
@@ -95,6 +99,26 @@ test("buildPipelineConfig resolves remoteOnly with default, explicit override, a
 	}
 });
 
+test("hoursOld remains absent unless explicitly configured", () => {
+	const omitted = buildPipelineConfig();
+	assert.strictEqual(omitted.search.hoursOld, undefined);
+
+	const configured = buildPipelineConfig({ search: { hoursOld: 48 } });
+	assert.strictEqual(configured.search.hoursOld, 48);
+
+	assert.throws(
+		() => buildPipelineConfig({ search: { hoursOld: 0 } }),
+		/greater than 0/,
+	);
+});
+
+test("explicit remote-only CLI values take precedence over the environment", () => {
+	assert.equal(resolveRemoteOnlyOption(undefined, undefined, undefined), false);
+	assert.equal(resolveRemoteOnlyOption(undefined, undefined, "1"), true);
+	assert.equal(resolveRemoteOnlyOption(false, false, "1"), false);
+	assert.equal(resolveRemoteOnlyOption(true, true, undefined), true);
+});
+
 test("CLI option declarations and help text for remote-only", async () => {
 	const cliPath = path.join(__dirname, "../dist/index.js");
 
@@ -116,8 +140,95 @@ test("CLI option declarations and help text for remote-only", async () => {
 	assert.match(pipelineHelp, /--remote-only/);
 	assert.match(
 		pipelineHelp,
-		/Filter acquired jobs to retain only remote positions/,
+		/confirm\s+remote status with remoteEval before jobJudge/,
 	);
+	assert.match(pipelineHelp, /--remoteeval-preset/);
+	assert.match(pipelineHelp, /--re-provider/);
+	assert.match(pipelineHelp, /--re-reasoning-level/);
+	assert.doesNotMatch(acquireHelp, /default: 168/);
+	assert.doesNotMatch(pipelineHelp, /default: 24/);
+});
+
+test("pipeline normalization selects only configured source artifacts", () => {
+	const config = buildPipelineConfig({
+		search: { sites: ["indeed"] },
+		paths: {
+			acquiredJobsFile: "/data/acquired_jobs_indeed.json",
+			acquiredJobsIndeedFile: "/data/acquired_jobs_indeed.json",
+			acquiredJobsLinkedInFile: "/data/acquired_jobs_linkedin.json",
+		},
+	});
+	assert.deepEqual(resolvePipelineAcquisitionInputFiles(config), [
+		"/data/acquired_jobs_indeed.json",
+	]);
+
+	const multiSource = buildPipelineConfig({
+		search: { sites: ["indeed", "linkedin"] },
+		paths: {
+			acquiredJobsFile: "/data/acquired_jobs_indeed.json",
+			acquiredJobsIndeedFile: "/data/acquired_jobs_indeed.json",
+			acquiredJobsLinkedInFile: "/data/acquired_jobs_linkedin.json",
+		},
+	});
+	assert.deepEqual(resolvePipelineAcquisitionInputFiles(multiSource), [
+		"/data/acquired_jobs_indeed.json",
+		"/data/acquired_jobs_linkedin.json",
+	]);
+});
+
+test("processData defensively filters canonical and legacy reused artifacts", async (t) => {
+	const tempDir = await fs.mkdtemp(
+		path.join(os.tmpdir(), "astroex-remote-process-"),
+	);
+	t.after(() => fs.rm(tempDir, { recursive: true, force: true }));
+
+	const selectedFile = path.join(tempDir, "selected_jobs.json");
+	const staleFile = path.join(tempDir, "acquired_jobs_stale.json");
+	const outputFile = path.join(tempDir, "processed_jobs.json");
+	await fs.writeFile(
+		selectedFile,
+		JSON.stringify([
+			createMockJob("canonical-remote", true),
+			createMockJob("canonical-onsite", false),
+			{
+				id: "linkedin:legacy-remote",
+				title: "Legacy Remote Engineer",
+				company: "Legacy Corp",
+				url: "https://www.linkedin.com/jobs/view/1234567890",
+				remoteOk: true,
+			},
+			{
+				id: "linkedin:legacy-onsite",
+				title: "Legacy Onsite Engineer",
+				company: "Legacy Corp",
+				url: "https://www.linkedin.com/jobs/view/1234567891",
+				remoteOk: false,
+			},
+		]),
+		"utf8",
+	);
+	await fs.writeFile(
+		staleFile,
+		JSON.stringify([createMockJob("stale-onsite", false)]),
+		"utf8",
+	);
+
+	const result = await processAcquiredJobs({
+		inputFiles: [selectedFile],
+		outputFile,
+		companyFilters: [],
+		titleFilters: [],
+		remoteOnly: true,
+	});
+	const jobs = JSON.parse(await fs.readFile(outputFile, "utf8"));
+
+	assert.equal(result.filesProcessed, 1);
+	assert.equal(result.remoteFilteredEntries, 2);
+	assert.deepEqual(
+		jobs.map((job) => job.id),
+		["indeed:canonical-remote", "linkedin:legacy-remote"],
+	);
+	assert.ok(jobs.every((job) => job.remoteOk === true));
 });
 
 test("runAcquireJobs with remote-only disabled preserves both remote and non-remote jobs", async (t) => {
@@ -158,7 +269,6 @@ test("runAcquireJobs with remote-only disabled preserves both remote and non-rem
 		locations: "",
 		"results-wanted": 10,
 		distance: 25,
-		"hours-old": 24,
 		remote: false,
 		"remote-only": false,
 		"easy-apply": false,
@@ -168,10 +278,11 @@ test("runAcquireJobs with remote-only disabled preserves both remote and non-rem
 		proxies: "",
 		"output-file": outputFile,
 		"use-jobdb": false,
-		disableFileLogging: true,
 	});
 
 	assert.equal(result.jobs, 3);
+	assert.strictEqual(capturedQuery.hoursOld, undefined);
+	assert.strictEqual(capturedQuery.isRemote, undefined);
 	assert.strictEqual(capturedQuery.remoteOnly, undefined);
 
 	const savedContent = JSON.parse(await fs.readFile(outputFile, "utf-8"));
@@ -223,7 +334,6 @@ test("runAcquireJobs with remote-only enabled retains only isRemote === true and
 		locations: "",
 		"results-wanted": 10,
 		distance: 25,
-		"hours-old": 24,
 		remote: false,
 		"remote-only": true,
 		"easy-apply": false,
@@ -233,11 +343,11 @@ test("runAcquireJobs with remote-only enabled retains only isRemote === true and
 		proxies: "",
 		"output-file": outputFile,
 		"use-jobdb": false,
-		disableFileLogging: true,
 	});
 
 	assert.strictEqual(capturedQuery.isRemote, true);
 	assert.strictEqual(capturedQuery.remoteOnly, true);
+	assert.strictEqual(capturedQuery.hoursOld, undefined);
 	assert.equal(result.jobs, 2);
 
 	const savedContent = JSON.parse(await fs.readFile(outputFile, "utf-8"));
@@ -312,7 +422,6 @@ test("runAcquireJobs with remote-only filters non-remote jobs from resumed check
 		proxies: "",
 		"output-file": outputFile,
 		"use-jobdb": false,
-		disableFileLogging: true,
 	});
 
 	// Only existing-remote remains

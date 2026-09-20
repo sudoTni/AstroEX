@@ -150,25 +150,70 @@ export function rgbToBgAnsi(r: number, g: number, b: number): string {
  * Strip all ANSI escape sequences from text.
  */
 export function stripAnsi(text: string): string {
-	return text.replace(
-		new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*[a-zA-Z]`, "g"),
-		"",
+	const escapeCharacter = String.fromCharCode(27);
+	const bell = String.fromCharCode(7);
+	const controlSequenceIntroducer = String.fromCharCode(155);
+	const operatingSystemCommand = new RegExp(
+		`${escapeCharacter}\\][^${bell}]*?(?:${bell}|${escapeCharacter}\\\\)`,
+		"g",
 	);
+	const controlSequence = new RegExp(
+		`(?:${escapeCharacter}\\[|${controlSequenceIntroducer})[0-?]*[ -/]*[@-~]`,
+		"g",
+	);
+	const twoCharacterEscape = new RegExp(`${escapeCharacter}[@-_]`, "g");
+	return text
+		.replace(operatingSystemCommand, "")
+		.replace(controlSequence, "")
+		.replace(twoCharacterEscape, "");
 }
 
 /**
  * Detect whether terminal color is currently enabled.
  */
 export function isColorSupported(): boolean {
-	if (process.env.NO_COLOR || process.env.ASTROEX_NO_COLOR === "1") {
+	const argv = process.argv;
+	if (
+		argv.includes("--no-color") ||
+		argv.includes("--no-colors") ||
+		argv.includes("--color=false") ||
+		argv.includes("--color=0")
+	) {
 		return false;
 	}
+	if (
+		argv.includes("--color") ||
+		argv.includes("--color=true") ||
+		argv.includes("--color=1")
+	) {
+		return true;
+	}
+
+	if (
+		process.env.NO_COLOR !== undefined &&
+		process.env.NO_COLOR !== "" &&
+		process.env.NO_COLOR !== "undefined"
+	) {
+		return false;
+	}
+
+	const astroexNoColor = process.env.ASTROEX_NO_COLOR?.trim().toLowerCase();
+	if (astroexNoColor !== undefined && astroexNoColor !== "") {
+		if (["1", "true", "yes", "on"].includes(astroexNoColor)) {
+			return false;
+		}
+		if (["0", "false", "no", "off"].includes(astroexNoColor)) {
+			return true;
+		}
+	}
+
 	if (process.env.FORCE_COLOR === "0") {
 		return false;
 	}
 	if (process.env.FORCE_COLOR === "1" || process.env.FORCE_COLOR === "true") {
 		return true;
 	}
+
 	return Boolean(process.stdout?.isTTY);
 }
 
@@ -210,62 +255,137 @@ export function interpolateHue(
  * Distinguishable at a glance with intentional palettes and directions.
  */
 export const LOG_GRADIENTS = {
-	// Log severity profiles
+	// Log severity profiles. State colours intentionally use a single hue: a
+	// warning or failure must remain recognizable when adjacent log lines race by.
 	trace: {
 		name: "trace",
-		startHue: 0.68, // Lavender
-		endHue: 0.58, // Subdued slate-blue
-		saturation: 0.5,
-		value: 0.78,
+		startHue: 0.62, // Muted slate blue
+		endHue: 0.62,
+		saturation: 0.28,
+		value: 0.72,
 		direction: "shortest",
 	},
 	debug: {
 		name: "debug",
-		startHue: 0.5, // Cyan
-		endHue: 0.62, // Blue
-		saturation: 0.8,
-		value: 0.92,
-		direction: "forward",
+		startHue: 0.59, // Muted blue
+		endHue: 0.59,
+		saturation: 0.38,
+		value: 0.78,
+		direction: "shortest",
 	},
 	info: {
 		name: "info",
-		startHue: 0.58, // Blue
-		endHue: 0.76, // Violet
-		saturation: 0.85,
-		value: 0.98,
+		startHue: 0.58, // Blue → indigo is reserved for informational labels
+		endHue: 0.66,
+		saturation: 0.76,
+		value: 0.94,
 		direction: "forward",
 	},
 	success: {
 		name: "success",
-		startHue: 0.33, // Green
-		endHue: 0.48, // Cyan
-		saturation: 0.88,
-		value: 0.98,
-		direction: "forward",
+		startHue: 0.36, // Green
+		endHue: 0.36,
+		saturation: 0.78,
+		value: 0.92,
+		direction: "shortest",
 	},
 	warn: {
 		name: "warn",
-		startHue: 0.14, // Gold / Yellow
-		endHue: 0.07, // Amber / Orange
-		saturation: 0.92,
-		value: 0.98,
-		direction: "reverse",
+		startHue: 0.12, // Amber
+		endHue: 0.12,
+		saturation: 0.88,
+		value: 0.96,
+		direction: "shortest",
 	},
 	error: {
 		name: "error",
-		startHue: 0.08, // Orange
-		endHue: 0.0, // Red
-		saturation: 0.92,
-		value: 0.98,
-		direction: "reverse",
+		startHue: 0.0, // Red
+		endHue: 0.0,
+		saturation: 0.86,
+		value: 0.94,
+		direction: "shortest",
 	},
 	fatal: {
 		name: "fatal",
-		startHue: 0.0, // Deep Red
-		endHue: 0.85, // Magenta
-		saturation: 0.95,
-		value: 1.0,
+		startHue: 0.97, // Deep red
+		endHue: 0.97,
+		saturation: 0.92,
+		value: 0.9,
+		direction: "shortest",
+	},
+
+	// Terminal hierarchy and contextual values.
+	section: {
+		name: "section",
+		startHue: 0.72, // Indigo → blue section boundary
+		endHue: 0.58,
+		saturation: 0.72,
+		value: 0.94,
 		direction: "reverse",
+	},
+	component: {
+		name: "component",
+		startHue: 0.61,
+		endHue: 0.61,
+		saturation: 0.62,
+		value: 0.88,
+		direction: "shortest",
+	},
+	activity: {
+		name: "activity",
+		startHue: 0.52, // Cyan for work in progress
+		endHue: 0.52,
+		saturation: 0.7,
+		value: 0.92,
+		direction: "shortest",
+	},
+	value: {
+		name: "value",
+		startHue: 0.54,
+		endHue: 0.54,
+		saturation: 0.58,
+		value: 0.92,
+		direction: "shortest",
+	},
+	path: {
+		name: "path",
+		startHue: 0.46, // Teal for files, directories, and URLs
+		endHue: 0.46,
+		saturation: 0.64,
+		value: 0.9,
+		direction: "shortest",
+	},
+	identifier: {
+		name: "identifier",
+		startHue: 0.73, // Violet for providers, models, IDs, and presets
+		endHue: 0.73,
+		saturation: 0.58,
+		value: 0.94,
+		direction: "shortest",
+	},
+	metric: {
+		name: "metric",
+		startHue: 0.52, // Cyan for counts and statistics
+		endHue: 0.52,
+		saturation: 0.7,
+		value: 0.96,
+		direction: "shortest",
+	},
+	duration: {
+		name: "duration",
+		startHue: 0.13, // Gold for elapsed time
+		endHue: 0.13,
+		saturation: 0.74,
+		value: 0.96,
+		direction: "shortest",
+	},
+	diagnostic: {
+		name: "diagnostic",
+		startHue: 0.61,
+		endHue: 0.61,
+		saturation: 0.2,
+		value: 0.68,
+		direction: "shortest",
 	},
 
 	// LLM Diagnostic & Event Profiles

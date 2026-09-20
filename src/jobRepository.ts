@@ -2,18 +2,24 @@ import * as crypto from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { DatabaseSync } from "node:sqlite";
+import { JOB_DB_RETENTION_MS } from "./constants";
 import { createLogger, log } from "./utils";
 
 const logger = createLogger("JobRepository");
 
 const DEFAULT_MAX_RECORDS = 250_000;
-const JOB_REPOSITORY_SCHEMA_VERSION = "1";
+const JOB_REPOSITORY_SCHEMA_VERSION = "3";
 const MAX_TITLE_LENGTH = 200;
 const MAX_COMPANY_LENGTH = 100;
+const LATEST_JOB_CHECKPOINT_SQL = `MAX(
+	admit_time,
+	COALESCE(description_scraped_at, admit_time),
+	COALESCE(last_processed, admit_time)
+)`;
 
 export interface JobRecord {
 	id: string;
-	source: "indeed";
+	source: "indeed" | "linkedin";
 	sourceJobId?: string;
 	company: string;
 	title: string;
@@ -25,11 +31,30 @@ export interface JobRecord {
 
 export interface JobIdentity {
 	id?: string;
-	source?: "indeed";
+	source?: "indeed" | "linkedin";
 	sourceJobId?: string;
 	title: string;
 	company: string;
 	url?: string;
+}
+
+export interface JobClothIdentity {
+	title: string;
+	company: string;
+}
+
+export function normalizeJobMatchValue(value: string): string {
+	return value.toLowerCase().trim().replace(/\s+/g, " ");
+}
+
+export function createJobClothMatchKey(
+	job: JobClothIdentity,
+): string | undefined {
+	if (typeof job?.title !== "string" || typeof job?.company !== "string")
+		return undefined;
+	const title = normalizeJobMatchValue(job.title);
+	const company = normalizeJobMatchValue(job.company);
+	return title && company ? `${title}\u0000${company}` : undefined;
 }
 
 export interface JobRepositoryConfig {
@@ -108,6 +133,7 @@ export class JobRepository {
 	constructor(config: JobRepositoryConfig) {
 		this.config = {
 			...config,
+			defaultExpirationMs: config.defaultExpirationMs ?? JOB_DB_RETENTION_MS,
 			legacyJsonPath:
 				config.legacyJsonPath ??
 				path.join(path.dirname(config.dbFilePath), "jobDB.json"),
@@ -131,9 +157,53 @@ export class JobRepository {
 				key TEXT PRIMARY KEY,
 				value TEXT NOT NULL
 			) STRICT;
+		`);
+
+		const versionRow = this.database
+			.prepare("SELECT value FROM metadata WHERE key = 'schema_version'")
+			.get() as { value?: unknown } | undefined;
+		const currentVersion =
+			typeof versionRow?.value === "string" ? versionRow.value : undefined;
+
+		if (currentVersion === "1") {
+			this.database.exec("PRAGMA foreign_keys = OFF;");
+			this.database.exec("BEGIN IMMEDIATE;");
+			try {
+				this.database.exec(`
+					CREATE TABLE IF NOT EXISTS jobs_v2 (
+						identity_key TEXT PRIMARY KEY,
+						source TEXT NOT NULL CHECK(source IN ('indeed', 'linkedin')),
+						source_job_id TEXT,
+						company TEXT NOT NULL,
+						title TEXT NOT NULL,
+						admit_time INTEGER NOT NULL,
+						description_scraped_at INTEGER,
+						last_processed INTEGER,
+						search_only INTEGER NOT NULL DEFAULT 1 CHECK(search_only IN (0, 1))
+					) STRICT;
+					INSERT INTO jobs_v2 SELECT * FROM jobs;
+					DROP TABLE jobs;
+					ALTER TABLE jobs_v2 RENAME TO jobs;
+					CREATE UNIQUE INDEX IF NOT EXISTS jobs_source_id
+						ON jobs(source, source_job_id) WHERE source_job_id IS NOT NULL;
+					CREATE INDEX IF NOT EXISTS jobs_expiry ON jobs(admit_time);
+					CREATE INDEX IF NOT EXISTS jobs_discovery_eviction
+						ON jobs(search_only, description_scraped_at, admit_time);
+					CREATE INDEX IF NOT EXISTS jobs_judged ON jobs(last_processed);
+				`);
+				this.database.exec("COMMIT;");
+			} catch (migrationError) {
+				this.database.exec("ROLLBACK;");
+				throw migrationError;
+			} finally {
+				this.database.exec("PRAGMA foreign_keys = ON;");
+			}
+		}
+
+		this.database.exec(`
 			CREATE TABLE IF NOT EXISTS jobs (
 				identity_key TEXT PRIMARY KEY,
-				source TEXT NOT NULL CHECK(source = 'indeed'),
+				source TEXT NOT NULL CHECK(source IN ('indeed', 'linkedin')),
 				source_job_id TEXT,
 				company TEXT NOT NULL,
 				title TEXT NOT NULL,
@@ -166,14 +236,27 @@ export class JobRepository {
 			) STRICT;
 			CREATE INDEX IF NOT EXISTS stage_checkpoints_lookup
 				ON stage_checkpoints(stage, input_hash, preset, model);
+			CREATE TABLE IF NOT EXISTS job_cloth_history (
+				normalized_title TEXT NOT NULL,
+				normalized_company TEXT NOT NULL,
+				title TEXT NOT NULL,
+				company TEXT NOT NULL,
+				last_processed_at INTEGER NOT NULL,
+				PRIMARY KEY (normalized_title, normalized_company)
+			) STRICT;
+			CREATE INDEX IF NOT EXISTS job_cloth_history_processed_at
+				ON job_cloth_history(last_processed_at);
 		`);
+		this.initialized = true;
+		this.importLegacyJsonOnce();
+		if (currentVersion !== JOB_REPOSITORY_SCHEMA_VERSION) {
+			this.backfillJobClothHistory();
+		}
 		this.database
 			.prepare(
 				"INSERT INTO metadata(key, value) VALUES ('schema_version', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
 			)
 			.run(JOB_REPOSITORY_SCHEMA_VERSION);
-		this.initialized = true;
-		this.importLegacyJsonOnce();
 	}
 
 	/**
@@ -200,7 +283,7 @@ export class JobRepository {
 		if (!this.config.enableJobDB) return 0;
 		const database = this.requireDatabase();
 		const result = database
-			.prepare("DELETE FROM jobs WHERE admit_time <= ?")
+			.prepare(`DELETE FROM jobs WHERE ${LATEST_JOB_CHECKPOINT_SQL} <= ?`)
 			.run(this.now() - this.config.defaultExpirationMs);
 		return Number(result.changes);
 	}
@@ -217,8 +300,104 @@ export class JobRepository {
 	}
 
 	isJobMatched(job: JobIdentity): boolean {
-		const entry = this.findActive(job);
-		return !!entry && entry.lastProcessed !== undefined;
+		const entry = this.findEntry(job);
+		return (
+			entry?.lastProcessed !== undefined &&
+			this.now() - entry.lastProcessed < this.config.defaultExpirationMs
+		);
+	}
+
+	/**
+	 * Record every valid job presented to a successfully completed jobCloth run.
+	 * The normalized title/company pair is the identity and later runs retain only
+	 * the newest processing time for that pair.
+	 */
+	async recordJobClothProcessed(
+		jobs: JobClothIdentity[],
+		processedAt = this.now(),
+	): Promise<number> {
+		if (!this.config.enableJobDB) return 0;
+		if (!Number.isSafeInteger(processedAt) || processedAt < 0) {
+			throw new Error(
+				"jobCloth processing timestamp must be a non-negative integer",
+			);
+		}
+		const unique = new Map<string, JobClothIdentity>();
+		for (const job of jobs) {
+			const key = createJobClothMatchKey(job);
+			if (key) unique.set(key, job);
+		}
+		if (unique.size === 0) return 0;
+
+		const database = this.requireDatabase();
+		const statement = database.prepare(`
+			INSERT INTO job_cloth_history (
+				normalized_title, normalized_company, title, company, last_processed_at
+			) VALUES (?, ?, ?, ?, ?)
+			ON CONFLICT(normalized_title, normalized_company) DO UPDATE SET
+				title = CASE
+					WHEN excluded.last_processed_at >= job_cloth_history.last_processed_at
+					THEN excluded.title ELSE job_cloth_history.title END,
+				company = CASE
+					WHEN excluded.last_processed_at >= job_cloth_history.last_processed_at
+					THEN excluded.company ELSE job_cloth_history.company END,
+				last_processed_at = MAX(
+					job_cloth_history.last_processed_at,
+					excluded.last_processed_at
+				)
+		`);
+		database.exec("BEGIN IMMEDIATE");
+		try {
+			for (const [key, job] of unique) {
+				const separator = key.indexOf("\u0000");
+				statement.run(
+					key.slice(0, separator),
+					key.slice(separator + 1),
+					job.title,
+					job.company,
+					processedAt,
+				);
+			}
+			database.exec("COMMIT");
+			return unique.size;
+		} catch (error) {
+			database.exec("ROLLBACK");
+			throw error;
+		}
+	}
+
+	/** Return normalized title/company keys processed strictly within the window. */
+	getRecentJobClothProcessingKeys(
+		jobs: JobClothIdentity[],
+		coolOffMs: number,
+	): Set<string> {
+		if (!this.config.enableJobDB) return new Set();
+		if (!Number.isSafeInteger(coolOffMs) || coolOffMs <= 0) {
+			throw new Error("jobCloth cool-off duration must be a positive integer");
+		}
+		const uniqueKeys = new Set<string>();
+		for (const job of jobs) {
+			const key = createJobClothMatchKey(job);
+			if (key) uniqueKeys.add(key);
+		}
+		const recent = new Set<string>();
+		const threshold = this.now() - coolOffMs;
+		const statement = this.requireDatabase().prepare(`
+			SELECT 1 FROM job_cloth_history
+			WHERE normalized_title = ?
+				AND normalized_company = ?
+				AND last_processed_at > ?
+		`);
+		for (const key of uniqueKeys) {
+			const separator = key.indexOf("\u0000");
+			const row = statement.get(
+				key.slice(0, separator),
+				key.slice(separator + 1),
+				threshold,
+			);
+			if (row) recent.add(key);
+		}
+		return recent;
 	}
 
 	async addSearchedJobs(jobs: JobIdentity[]): Promise<number> {
@@ -265,11 +444,8 @@ export class JobRepository {
 				const isExpired =
 					now - current.admitTime >= this.config.defaultExpirationMs;
 				const admitTime = isExpired ? now : current.admitTime;
-				const lastProcessed = isExpired
-					? null
-					: (current.lastProcessed ?? null);
-				const searchOnly =
-					current.lastProcessed !== undefined && !isExpired ? 0 : 1;
+				const lastProcessed = current.lastProcessed ?? null;
+				const searchOnly = current.lastProcessed !== undefined ? 0 : 1;
 				database
 					.prepare(
 						"UPDATE jobs SET company = ?, title = ?, admit_time = ?, description_scraped_at = ?, last_processed = ?, search_only = ? WHERE identity_key = ?",
@@ -383,8 +559,8 @@ export class JobRepository {
 					COUNT(*) AS total,
 					SUM(CASE WHEN search_only = 1 AND description_scraped_at IS NULL THEN 1 ELSE 0 END) AS discovery,
 					SUM(CASE WHEN search_only = 1 AND description_scraped_at IS NOT NULL THEN 1 ELSE 0 END) AS described,
-					SUM(CASE WHEN admit_time <= ? THEN 1 ELSE 0 END) AS expired,
-					MIN(CASE WHEN admit_time > ? THEN admit_time + ? ELSE NULL END) AS next_expiration
+					SUM(CASE WHEN ${LATEST_JOB_CHECKPOINT_SQL} <= ? THEN 1 ELSE 0 END) AS expired,
+					MIN(CASE WHEN ${LATEST_JOB_CHECKPOINT_SQL} > ? THEN ${LATEST_JOB_CHECKPOINT_SQL} + ? ELSE NULL END) AS next_expiration
 				FROM jobs
 			`)
 			.get(
@@ -661,6 +837,54 @@ export class JobRepository {
 		}
 	}
 
+	private backfillJobClothHistory(): void {
+		const database = this.requireDatabase();
+		const rows = database
+			.prepare(
+				"SELECT title, company, last_processed FROM jobs WHERE last_processed IS NOT NULL",
+			)
+			.all() as Array<{
+			title: string;
+			company: string;
+			last_processed: number;
+		}>;
+		const statement = database.prepare(`
+			INSERT INTO job_cloth_history (
+				normalized_title, normalized_company, title, company, last_processed_at
+			) VALUES (?, ?, ?, ?, ?)
+			ON CONFLICT(normalized_title, normalized_company) DO UPDATE SET
+				title = CASE
+					WHEN excluded.last_processed_at >= job_cloth_history.last_processed_at
+					THEN excluded.title ELSE job_cloth_history.title END,
+				company = CASE
+					WHEN excluded.last_processed_at >= job_cloth_history.last_processed_at
+					THEN excluded.company ELSE job_cloth_history.company END,
+				last_processed_at = MAX(
+					job_cloth_history.last_processed_at,
+					excluded.last_processed_at
+				)
+		`);
+		database.exec("BEGIN IMMEDIATE");
+		try {
+			for (const row of rows) {
+				const key = createJobClothMatchKey(row);
+				if (!key || !Number.isSafeInteger(row.last_processed)) continue;
+				const separator = key.indexOf("\u0000");
+				statement.run(
+					key.slice(0, separator),
+					key.slice(separator + 1),
+					row.title,
+					row.company,
+					row.last_processed,
+				);
+			}
+			database.exec("COMMIT");
+		} catch (error) {
+			database.exec("ROLLBACK");
+			throw error;
+		}
+	}
+
 	private findActive(job: JobIdentity): JobRecord | undefined {
 		if (!this.config.enableJobDB) return undefined;
 		const entry = this.findEntry(job);
@@ -695,7 +919,7 @@ export class JobRepository {
 		this.requireDatabase()
 			.prepare(`
 				INSERT INTO jobs(identity_key, source, source_job_id, company, title, admit_time, description_scraped_at, last_processed, search_only)
-				VALUES (?, 'indeed', ?, ?, ?, ?, ?, ?, ?)
+				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 				ON CONFLICT(identity_key) DO UPDATE SET
 					company = excluded.company,
 					title = excluded.title,
@@ -710,19 +934,18 @@ export class JobRepository {
 						ELSE MAX(jobs.description_scraped_at, excluded.description_scraped_at)
 					END,
 					last_processed = CASE
-						WHEN (excluded.admit_time - jobs.admit_time) >= ? THEN excluded.last_processed
 						WHEN jobs.last_processed IS NULL THEN excluded.last_processed
 						WHEN excluded.last_processed IS NULL THEN jobs.last_processed
 						ELSE MAX(jobs.last_processed, excluded.last_processed)
 					END,
 					search_only = CASE
-						WHEN (excluded.admit_time - jobs.admit_time) >= ? THEN excluded.search_only
 						WHEN jobs.last_processed IS NOT NULL OR excluded.last_processed IS NOT NULL THEN 0
 						ELSE excluded.search_only
 					END
 			`)
 			.run(
 				this.identityKey(job),
+				job.source ?? "indeed",
 				this.sourceId(job) ?? null,
 				job.company,
 				job.title,
@@ -730,8 +953,6 @@ export class JobRepository {
 				descriptionScrapedAt ?? null,
 				lastProcessed ?? null,
 				searchOnly ? 1 : 0,
-				expirationMs,
-				expirationMs,
 				expirationMs,
 				expirationMs,
 			);
@@ -742,7 +963,7 @@ export class JobRepository {
 		const current = this.size();
 		if (current + required <= this.config.maxRecords) return;
 		database
-			.prepare("DELETE FROM jobs WHERE admit_time <= ?")
+			.prepare(`DELETE FROM jobs WHERE ${LATEST_JOB_CHECKPOINT_SQL} <= ?`)
 			.run(this.now() - this.config.defaultExpirationMs);
 		const afterExpiry = this.size();
 		if (afterExpiry + required <= this.config.maxRecords) return;
@@ -764,15 +985,17 @@ export class JobRepository {
 	}
 
 	private identityKey(job: JobIdentity): string {
+		const source = job.source ?? "indeed";
 		const sourceId = this.sourceId(job);
 		return sourceId
-			? `id:indeed:${sourceId}`
-			: `fallback:indeed:${this.normalize(job.company)}:${this.normalize(job.title)}`;
+			? `id:${source}:${sourceId}`
+			: `fallback:${source}:${normalizeJobMatchValue(job.company)}:${normalizeJobMatchValue(job.title)}`;
 	}
 
 	private sourceId(job: JobIdentity): string | undefined {
 		const explicit = job.sourceJobId?.trim() || job.id?.trim();
-		if (explicit) return explicit.replace(/^indeed:/, "").slice(0, 512);
+		if (explicit)
+			return explicit.replace(/^(indeed|linkedin):/, "").slice(0, 512);
 		if (!job.url) return undefined;
 		try {
 			const url = new URL(job.url);
@@ -780,6 +1003,8 @@ export class JobRepository {
 				.map((key) => url.searchParams.get(key))
 				.find(Boolean);
 			if (knownId) return knownId.slice(0, 512);
+			const liMatch = url.pathname.match(/\/jobs\/view\/(\d+)/);
+			if (liMatch?.[1]) return liMatch[1].slice(0, 512);
 			url.search = "";
 			url.hash = "";
 			return `url:${url.hostname.toLowerCase()}${url.pathname.replace(/\/$/, "")}`;
@@ -797,18 +1022,20 @@ export class JobRepository {
 			job.company.trim().length > 0 &&
 			job.title.length <= MAX_TITLE_LENGTH &&
 			job.company.length <= MAX_COMPANY_LENGTH &&
-			(!job.source || job.source === "indeed")
+			(!job.source || job.source === "indeed" || job.source === "linkedin")
 		);
 	}
 
 	private assertValidJob(job: JobIdentity): void {
-		if (!this.isValidJob(job)) throw new Error("Invalid Indeed job identity");
+		if (!this.isValidJob(job)) throw new Error("Invalid job identity");
 	}
 
 	private toRecord(row: Record<string, unknown>): JobRecord {
 		return {
 			id: String(row.identity_key),
-			source: "indeed",
+			source: (row.source === "linkedin" ? "linkedin" : "indeed") as
+				| "indeed"
+				| "linkedin",
 			sourceJobId:
 				typeof row.source_job_id === "string" ? row.source_job_id : undefined,
 			company: String(row.company),
@@ -822,10 +1049,6 @@ export class JobRepository {
 				typeof row.last_processed === "number" ? row.last_processed : undefined,
 			searchOnly: Number(row.search_only) === 1 ? true : undefined,
 		};
-	}
-
-	private normalize(value: string): string {
-		return value.toLowerCase().trim().replace(/\s+/g, " ");
 	}
 
 	private requireDatabase(): DatabaseSync {

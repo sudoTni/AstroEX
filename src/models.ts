@@ -16,7 +16,7 @@ export interface JobInterface {
 	descriptionHtml: string | undefined;
 	descriptionText?: string;
 	city: string;
-	remoteOk: boolean;
+	remoteOk?: boolean;
 	salaryMin: number;
 	salaryMax: number;
 	salaryCurrency: SalaryCurrency;
@@ -31,12 +31,22 @@ export interface JobInterface {
 	salaryRange?: string; // Added from getJobDescription
 	postedTime?: string; // Added from getJobDescription
 
-	// Source-neutral acquisition metadata for Indeed artifacts.
-	source?: "indeed";
+	// Source-neutral acquisition metadata for job artifacts.
+	source?: "indeed" | "linkedin";
 	sourceJobId?: string;
 	canonicalUrl?: string;
 	directUrl?: string;
 	acquiredAt?: string;
+	isRemote?: boolean;
+	isConfirmedRemote?: boolean;
+	remoteEvalMetadata?: {
+		jobTitle: string;
+		rationale: string;
+		confidence: number;
+		timestamp: string;
+		fallbackUsed: boolean;
+		retryCount: number;
+	};
 
 	// JobCloth / JobJudge analysis metadata
 	confidence?: number;

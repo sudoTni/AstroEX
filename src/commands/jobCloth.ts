@@ -4,8 +4,18 @@ import * as path from "node:path";
 import type { Argv } from "yargs";
 import { z } from "zod";
 import { writeArtifactManifest } from "../artifactManifest";
-import { type LLMRequest, llmService } from "../llmService";
+import type { JobRepository } from "../jobRepository";
+import {
+	type LLMRequest,
+	PathologicalReasoningRepetitionError,
+	llmService,
+} from "../llmService";
 import type { JobInterface } from "../models";
+import {
+	abortableDelay,
+	rethrowIfCancelled,
+	throwIfCancelled,
+} from "../pipelineCancellation";
 import {
 	loadAndReplacePromptTemplate,
 	loadPresets,
@@ -13,7 +23,6 @@ import {
 } from "../presets";
 import {
 	getDataDirectory,
-	getLogsDirectory,
 	getProfileFile,
 	getProjectDirectory,
 } from "../runtimePaths";
@@ -21,6 +30,7 @@ import {
 	checkStageCheckpoint,
 	completeStageCheckpoint,
 	computeFileHash,
+	getSharedJobRepository,
 	initStageCheckpoint,
 } from "../stageCheckpoint";
 import {
@@ -30,30 +40,29 @@ import {
 import {
 	type GlobalArgs,
 	type JobClothArgs,
+	type OpenRouterProviderRouting,
 	type Preset,
 	getPreset,
 } from "../types";
-import {
-	closeFileLogging,
-	createLogger,
-	formatDate,
-	formatDuration,
-	initializeFileLogging,
-	log,
-} from "../utils";
-import { withSpinner } from "../utils/spinner";
+import { createLogger, formatDate, formatDuration, log } from "../utils";
+import { createProgressReporter } from "../utils/progress";
+import { normalizeJobAnalysisRecord } from "../utils/sharedCommandUtils";
 
 const logger = createLogger("JobCloth");
 
 async function callLLMWithStats(
 	request: LLMRequest,
 	stats?: StatisticsCollector,
+	signal?: AbortSignal,
 ) {
 	const startedAt = performance.now();
 	stats?.incrementCounter("api.totalCalls", 1);
 	stats?.incrementCounter("network.connections", 1);
 	try {
-		const result = await llmService.call(request);
+		const result = await llmService.call(request, {
+			payloadLogStage: "jobCloth",
+			...(signal ? { signal } : {}),
+		});
 		stats?.incrementCounter("api.successfulCalls", 1);
 		stats?.recordHistogram("api.responseTime", performance.now() - startedAt);
 		return result;
@@ -63,6 +72,14 @@ async function callLLMWithStats(
 		const message = error instanceof Error ? error.message : String(error);
 		if (/timeout|timed out/i.test(message)) {
 			stats?.incrementCounter("network.timeouts", 1);
+		}
+		if (
+			error instanceof PathologicalReasoningRepetitionError ||
+			(error as { name?: string })?.name ===
+				"PathologicalReasoningRepetitionError" ||
+			/pathological reasoning repetition/i.test(message)
+		) {
+			stats?.incrementCounter("api.repetitionErrors", 1);
 		}
 		throw error;
 	}
@@ -88,37 +105,41 @@ const ConfidenceCoerce = z.preprocess((val) => {
 }, z.number().min(0).max(1).default(0));
 
 // Zod schemas
-const JobAnalysisResultSchema = z
-	.object({
-		jobTitle: z.string().optional(),
-		job_title: z.string().optional(),
-		title: z.string().optional(),
-		isWorthInvestigating: BooleanCoerce,
-		isVeryHighlyAligned: BooleanCoerce,
-		isHighlyAligned: BooleanCoerce,
-		rationale: z.string().optional().default(""),
-		confidence: ConfidenceCoerce,
-	})
-	.refine((data) => Boolean(data.jobTitle || data.job_title || data.title), {
-		message: "jobTitle, job_title, or title is required",
-	})
-	.transform((data) => {
-		const resolvedTitle = data.jobTitle ?? data.job_title ?? data.title ?? "";
-		const isAligned = Boolean(
-			data.isWorthInvestigating ??
-				data.isVeryHighlyAligned ??
-				data.isHighlyAligned ??
-				false,
-		);
-		return {
-			jobTitle: resolvedTitle,
-			isWorthInvestigating: isAligned,
-			isVeryHighlyAligned: isAligned,
-			isHighlyAligned: isAligned,
-			rationale: data.rationale,
-			confidence: data.confidence,
-		};
-	});
+const JobAnalysisResultSchema = z.preprocess(
+	normalizeJobAnalysisRecord,
+	z
+		.object({
+			jobTitle: z.string().optional(),
+			job_title: z.string().optional(),
+			title: z.string().optional(),
+			isWorthInvestigating: BooleanCoerce,
+			isVeryHighlyAligned: BooleanCoerce,
+			isHighlyAligned: BooleanCoerce,
+			rationale: z.string().optional().default(""),
+			confidence: ConfidenceCoerce,
+		})
+		.passthrough()
+		.refine((data) => Boolean(data.jobTitle || data.job_title || data.title), {
+			message: "jobTitle, job_title, or title is required",
+		})
+		.transform((data) => {
+			const resolvedTitle = data.jobTitle ?? data.job_title ?? data.title ?? "";
+			const isAligned = Boolean(
+				data.isWorthInvestigating ??
+					data.isVeryHighlyAligned ??
+					data.isHighlyAligned ??
+					false,
+			);
+			return {
+				jobTitle: resolvedTitle,
+				isWorthInvestigating: isAligned,
+				isVeryHighlyAligned: isAligned,
+				isHighlyAligned: isAligned,
+				rationale: data.rationale,
+				confidence: data.confidence,
+			};
+		}),
+);
 
 const JobAnalysisResultsArraySchema = z.union([
 	z.array(JobAnalysisResultSchema),
@@ -144,13 +165,12 @@ const JobAnalysisResultsArraySchema = z.union([
 const rootDirectory = getProjectDirectory();
 
 /**
- * Read the candidate's resume from the private profile directory.
+ * Read candidate resume from external file
  * @returns Resume content as string
  * @throws Error if file cannot be read
  */
-async function readResumeFromFile(
-	resumePath = getProfileFile("my_resume.txt"),
-): Promise<string> {
+async function readResumeFromFile(): Promise<string> {
+	const resumePath = getProfileFile("my_resume.txt");
 	try {
 		const content = await fsPromises.readFile(resumePath, "utf-8");
 		if (!content || content.trim().length === 0) {
@@ -162,35 +182,6 @@ async function readResumeFromFile(
 		throw new Error(
 			`Failed to read resume file from ${resumePath}: ${errorMessage}`,
 		);
-	}
-}
-
-/**
- * Save outbound LLM payload to logs folder when --log-payload is enabled
- */
-async function savePayloadToJson(
-	llmRequest: LLMRequest,
-	batchIdentifier: string | number,
-	logDir: string,
-): Promise<void> {
-	try {
-		await fsPromises.mkdir(logDir, { recursive: true });
-		const timestamp = formatDate(new Date(), "yyyyMMdd_HHmmss");
-		const payloadFileName = `jobcloth_${batchIdentifier}_payload_${timestamp}.json`;
-		const payloadFilePath = path.join(logDir, payloadFileName);
-		await fsPromises.writeFile(
-			payloadFilePath,
-			JSON.stringify(llmRequest, null, 2),
-			{ encoding: "utf-8", mode: 0o600 },
-		);
-		log(
-			"JobCloth",
-			`Outbound LLM payload saved to: ${payloadFilePath}`,
-			"info",
-		);
-	} catch (err) {
-		const errorMessage = err instanceof Error ? err.message : String(err);
-		log("JobCloth", `Failed to save payload to JSON: ${errorMessage}`, "warn");
 	}
 }
 
@@ -272,19 +263,25 @@ async function retryFailedJobTitles(
 	verbose: boolean,
 	circuitBreaker: {
 		checkState: () => boolean;
-		recordFailure: (error: unknown) => void;
+		recordFailure: (error?: unknown) => void;
 		recordSuccess: () => void;
+		reset?: () => void;
 	},
 	maxRetries: number,
 	showReasoningTokens = false,
 	showResponseStream = false,
 	stats?: StatisticsCollector,
 	reasoningEffort?: string,
+	providerRouting?: OpenRouterProviderRouting,
+	signal?: AbortSignal,
+	onTitleResolved?: (context: { jobTitle: string; success: boolean }) => void,
 ): Promise<z.infer<typeof JobAnalysisResultsArraySchema>> {
 	const successfulResults: z.infer<typeof JobAnalysisResultsArraySchema> = [];
 	const jobTitleRetryMap = new Map<string, number>();
+	circuitBreaker.reset?.();
 
 	for (const jobTitle of batchTitles) {
+		throwIfCancelled(signal);
 		let retryCount = 0;
 		let success = false;
 		let lastError: unknown = null;
@@ -348,6 +345,7 @@ async function retryFailedJobTitles(
 					...(reasoningEffort !== undefined && reasoningEffort !== ""
 						? { reasoning_effort: reasoningEffort }
 						: {}),
+					...(providerRouting ? { providerRouting } : {}),
 				};
 
 				if (verbose) {
@@ -356,14 +354,7 @@ async function retryFailedJobTitles(
 					});
 				}
 
-				const result = await withSpinner(
-					`Waiting for LLM response for "${jobTitle}" (attempt ${retryCount + 1}/${maxRetries})...`,
-					() => callLLMWithStats(llmRequest, stats),
-					{
-						enabled:
-							!llmRequest.showReasoningTokens && !llmRequest.showResponseStream,
-					},
-				);
+				const result = await callLLMWithStats(llmRequest, stats, signal);
 
 				// Record success for circuit breaker
 				circuitBreaker.recordSuccess();
@@ -386,6 +377,7 @@ async function retryFailedJobTitles(
 					}
 				}
 			} catch (apiError: unknown) {
+				rethrowIfCancelled(apiError, signal);
 				// Record failure for circuit breaker
 				circuitBreaker.recordFailure(apiError);
 
@@ -406,7 +398,7 @@ async function retryFailedJobTitles(
 				// Wait before retrying (exponential backoff)
 				if (retryCount < maxRetries) {
 					const retryDelay = 1000 * 2 ** (retryCount - 1);
-					await new Promise((res) => setTimeout(res, retryDelay));
+					await abortableDelay(retryDelay, signal);
 				}
 			}
 		}
@@ -420,6 +412,7 @@ async function retryFailedJobTitles(
 				"error",
 			);
 		}
+		onTitleResolved?.({ jobTitle, success });
 	}
 
 	if (verbose) {
@@ -454,13 +447,10 @@ export async function runJobCloth(
 		batch?: number;
 		retries?: number;
 		maxTokens?: number;
-		resumeFile?: string;
 		pingInterval?: number;
 		openaiTimeout?: number;
 		verbose?: boolean;
-		logPayload?: boolean;
 		preset?: string;
-		logDir?: string;
 		sleep?: number;
 		batchRetryAttempts?: number;
 		batchRetryDelay?: number;
@@ -474,6 +464,10 @@ export async function runJobCloth(
 		reasoningEffort?: string;
 		"jc-reasoning-effort"?: string;
 		"reasoning-effort"?: string;
+		providerRouting?: OpenRouterProviderRouting;
+		jobRepository?: JobRepository;
+		jobRepositoryFactory?: () => Promise<JobRepository>;
+		signal?: AbortSignal;
 	},
 ): Promise<JobInterface[]> {
 	const {
@@ -488,8 +482,6 @@ export async function runJobCloth(
 		pingInterval: pingInterval_unused = 15,
 		openaiTimeout = 60,
 		verbose = false,
-		logPayload = false,
-		logDir = getLogsDirectory(),
 		sleep = 2,
 		batchRetryAttempts = 3,
 		batchRetryDelay = 5000,
@@ -503,7 +495,12 @@ export async function runJobCloth(
 		reasoningEffort: rawReasoningEffort,
 		"jc-reasoning-effort": jcReasoningEffort,
 		"reasoning-effort": reasoningEffortAlias,
+		providerRouting,
+		jobRepository: suppliedJobRepository,
+		jobRepositoryFactory,
 	} = options;
+	const signal = options.signal;
+	throwIfCancelled(signal);
 	// Reference intentionally-unused values to satisfy linters without changing behavior
 	void baseUrl_unused;
 	void modelId_unused;
@@ -649,7 +646,7 @@ export async function runJobCloth(
 		const failedFilesList =
 			failedFiles.length > 0 ? `nFailed files: ${failedFiles.join(", ")}` : "";
 		throw new Error(
-			`No valid jobs found in any input files. Please run processData first or provide an Indeed job artifact.${failedFilesList}`,
+			`No valid jobs found in any input files. Please run processData first or provide a valid job artifact.${failedFilesList}`,
 		);
 	}
 
@@ -675,13 +672,23 @@ export async function runJobCloth(
 		"JobCloth",
 		`Processing ${jobTitles.length} unique job titles (filtered from ${allJobs.length} total jobs)`,
 		"info",
-		effectiveReasoningEffort
-			? { reasoning_effort: effectiveReasoningEffort }
-			: undefined,
+		{
+			...(effectiveReasoningEffort
+				? { reasoning_effort: effectiveReasoningEffort }
+				: {}),
+			...(providerRouting?.only?.length
+				? { "jc-provider": providerRouting.only.join(",") }
+				: {}),
+			...(providerRouting?.quantizations?.length
+				? {
+						"jc-provider-quant": providerRouting.quantizations.join(","),
+					}
+				: {}),
+		},
 	);
 
 	// Read resume once and cache it
-	const resumeContent = await readResumeFromFile(options.resumeFile);
+	const resumeContent = await readResumeFromFile();
 
 	// Load all presets and the Veritas system prompt
 	const allPresets = await loadPresets();
@@ -693,7 +700,7 @@ export async function runJobCloth(
 		: undefined;
 	if (!effectivePreset) {
 		// Fallback to a default preset if none is specified or found
-		effectivePreset = getPreset("jobCloth", "jc_mai-ds-r1", allPresets);
+		effectivePreset = getPreset("jobCloth", "jc_glm-5.3-flash", allPresets);
 		if (!effectivePreset) {
 			throw new Error(
 				"No valid preset found for jobCloth command and no default fallback available.",
@@ -705,6 +712,9 @@ export async function runJobCloth(
 	const effectiveApiKey = apiKey; // API key always comes from CLI/env
 	const effectiveBaseUrl = effectivePreset.base_url;
 	const effectiveModelId = effectivePreset.modelId;
+	const jobRepository =
+		suppliedJobRepository ??
+		(await (jobRepositoryFactory?.() ?? getSharedJobRepository()));
 
 	const hasCliTemperature =
 		process.argv.includes("--temperature") ||
@@ -760,8 +770,13 @@ export async function runJobCloth(
 				resolvedOutputFile,
 				effectivePreset.name,
 				effectivePreset.modelId,
+				jobRepository,
 			);
 			if (checkpoint.isCompleted) {
+				await jobRepository.recordJobClothProcessed(
+					allJobs,
+					checkpoint.checkpoint?.updatedAt,
+				);
 				log(
 					"JobCloth",
 					`Durable checkpoint match: jobCloth already completed for input ${inputFiles[0]} with preset ${effectivePreset.name}. Reusing ${resolvedOutputFile}.`,
@@ -783,11 +798,27 @@ export async function runJobCloth(
 				effectivePreset.modelId,
 				jobTitles.length,
 				Array.from(checkpoint.processedJobIds),
+				jobRepository,
 			);
 		} catch (err) {
 			log("JobCloth", `Checkpoint initialization notice: ${err}`, "debug");
 		}
 	}
+
+	const plannedPrimaryCalls =
+		batch === 0 ? 1 : Math.ceil(jobTitles.length / batch);
+	const primaryCallProgress = createProgressReporter(logger, {
+		label: "Stage 3/8: JobCloth",
+		totalUnits: plannedPrimaryCalls,
+		unitLabel: "LLM call",
+		// Stage 3 operators need confirmation after every completed batch. The
+		// shared reporter otherwise throttles known totals to twelve updates.
+		maxUpdates: plannedPrimaryCalls,
+	});
+	primaryCallProgress.start({
+		uniqueJobTitles: jobTitles.length,
+		batchSize: batch,
+	});
 
 	// Verbose logging for prompts and system information
 	if (verbose) {
@@ -809,15 +840,25 @@ export async function runJobCloth(
 			...(effectiveReasoningEffort
 				? { reasoning_effort: effectiveReasoningEffort }
 				: {}),
+			...(providerRouting?.only?.length
+				? { "jc-provider": providerRouting.only.join(",") }
+				: {}),
+			...(providerRouting?.quantizations?.length
+				? {
+						"jc-provider-quant": providerRouting.quantizations.join(","),
+					}
+				: {}),
 		});
 		log("JobCloth", "===================================", "debug");
 	}
 
 	// Initialize circuit breaker for API failures
+	const minFailuresToTrip = 3;
 	const circuitBreaker = {
 		isTripped: false,
 		failureCount: 0,
 		successCount: 0,
+		consecutiveFailures: 0,
 		lastFailureTime: 0,
 		timeout: circuitTimeout * 1000, // Convert to milliseconds
 
@@ -825,32 +866,31 @@ export async function runJobCloth(
 			const now = Date.now();
 			// Reset if timeout has passed
 			if (this.isTripped && now - this.lastFailureTime > this.timeout) {
-				this.isTripped = false;
-				this.failureCount = 0;
-				this.successCount = 0;
-				log("JobCloth", "Circuit breaker reset", "info");
+				this.reset();
+				log("JobCloth", "Circuit breaker reset after timeout", "info");
 				return false;
 			}
 			return this.isTripped;
 		},
 
+		reset: function () {
+			this.isTripped = false;
+			this.failureCount = 0;
+			this.consecutiveFailures = 0;
+		},
+
 		recordSuccess: function () {
 			this.successCount++;
-			this.failureCount = 0; // Reset failure count on success
-			if (this.successCount >= 3) {
-				// Require 3 consecutive successes to reset
+			this.consecutiveFailures = 0;
+			if (this.isTripped) {
 				this.isTripped = false;
-				this.successCount = 0;
-				log(
-					"JobCloth",
-					"Circuit breaker recovered after consecutive successes",
-					"info",
-				);
+				log("JobCloth", "Circuit breaker recovered after success", "info");
 			}
 		},
 
 		recordFailure: function (_error?: unknown) {
 			this.failureCount++;
+			this.consecutiveFailures++;
 			this.lastFailureTime = Date.now();
 
 			// Calculate failure rate
@@ -858,16 +898,22 @@ export async function runJobCloth(
 			const failureRate =
 				totalAttempts > 0 ? this.failureCount / totalAttempts : 1;
 
-			if (failureRate >= circuitThreshold && !this.isTripped) {
+			if (
+				!this.isTripped &&
+				this.failureCount >= minFailuresToTrip &&
+				(failureRate >= circuitThreshold ||
+					this.consecutiveFailures >= minFailuresToTrip)
+			) {
 				this.isTripped = true;
 				log(
 					"JobCloth",
-					`Circuit tripped: failure rate ${failureRate.toFixed(2)} >= threshold ${circuitThreshold}`,
+					`Circuit tripped: failure rate ${failureRate.toFixed(2)} >= threshold ${circuitThreshold} (failures: ${this.failureCount}, consecutive: ${this.consecutiveFailures})`,
 					"error",
 					{
 						failureRate,
 						threshold: circuitThreshold,
 						failureCount: this.failureCount,
+						consecutiveFailures: this.consecutiveFailures,
 						successCount: this.successCount,
 					},
 				);
@@ -881,6 +927,7 @@ export async function runJobCloth(
 		let processedCount = 0;
 		let attemptCount = 0;
 		while (processedCount < jobTitles.length) {
+			throwIfCancelled(signal);
 			const remainingTitles = jobTitles.slice(processedCount);
 			let success = false;
 			let lastError: unknown = null;
@@ -947,6 +994,7 @@ export async function runJobCloth(
 					...(effectiveReasoningEffort !== undefined
 						? { reasoning_effort: effectiveReasoningEffort }
 						: {}),
+					...(providerRouting ? { providerRouting } : {}),
 				};
 
 				// Add JSON Mode for OpenAI provider
@@ -954,10 +1002,6 @@ export async function runJobCloth(
 					(
 						llmRequest as LLMRequest & { response_format?: { type: string } }
 					).response_format = { type: "json_object" };
-				}
-
-				if (logPayload) {
-					await savePayloadToJson(llmRequest, "single", logDir);
 				}
 
 				if (verbose) {
@@ -974,15 +1018,7 @@ export async function runJobCloth(
 						);
 					}
 
-					const result = await withSpinner(
-						`Waiting for LLM response for ${remainingTitles.length} job title(s)...`,
-						() => callLLMWithStats(llmRequest, stats),
-						{
-							enabled:
-								!llmRequest.showReasoningTokens &&
-								!llmRequest.showResponseStream,
-						},
-					);
+					const result = await callLLMWithStats(llmRequest, stats, signal);
 
 					// Record success for circuit breaker
 					circuitBreaker.recordSuccess();
@@ -1012,6 +1048,7 @@ export async function runJobCloth(
 						}
 					}
 				} catch (apiError: unknown) {
+					rethrowIfCancelled(apiError, signal);
 					// Record failure for circuit breaker
 					circuitBreaker.recordFailure(apiError);
 
@@ -1023,6 +1060,7 @@ export async function runJobCloth(
 					}
 				}
 			} catch (error: unknown) {
+				rethrowIfCancelled(error, signal);
 				lastError = error;
 				if (verbose) {
 					const errorMessage =
@@ -1042,7 +1080,7 @@ export async function runJobCloth(
 						sleepSeconds: sleep,
 					},
 				);
-				await new Promise((res) => setTimeout(res, sleep * 1000));
+				await abortableDelay(sleep * 1000, signal);
 			}
 
 			if (!success) {
@@ -1053,12 +1091,17 @@ export async function runJobCloth(
 				);
 			}
 			processedCount += newlyProcessedCount;
+			primaryCallProgress.complete({
+				jobTitlesCompleted: processedCount,
+				jobTitlesTotal: jobTitles.length,
+			});
 		}
 	} else {
 		// Batched requests with retry logic
 		const totalBatches = Math.ceil(jobTitles.length / batch);
 
 		for (let i = 0; i < jobTitles.length; i += batch) {
+			throwIfCancelled(signal);
 			const batchTitles = jobTitles.slice(i, i + batch);
 			let batchSuccess = false;
 			let batchResults: z.infer<typeof JobAnalysisResultsArraySchema> = [];
@@ -1144,12 +1187,8 @@ export async function runJobCloth(
 						...(effectiveReasoningEffort !== undefined
 							? { reasoning_effort: effectiveReasoningEffort }
 							: {}),
+						...(providerRouting ? { providerRouting } : {}),
 					};
-
-					const batchNum = Math.floor(i / batch) + 1;
-					if (logPayload) {
-						await savePayloadToJson(llmRequest, `batch_${batchNum}`, logDir);
-					}
 
 					if (verbose) {
 						log("JobCloth", "LLM Request Payload:", "debug", {
@@ -1157,15 +1196,7 @@ export async function runJobCloth(
 						});
 					}
 
-					const result = await withSpinner(
-						`Waiting for LLM response for batch ${Math.floor(i / batch) + 1}/${totalBatches} (attempt ${batchAttempt}/${batchRetryAttempts})...`,
-						() => callLLMWithStats(llmRequest, stats),
-						{
-							enabled:
-								!llmRequest.showReasoningTokens &&
-								!llmRequest.showResponseStream,
-						},
-					);
+					const result = await callLLMWithStats(llmRequest, stats, signal);
 
 					// Record success for circuit breaker
 					circuitBreaker.recordSuccess();
@@ -1196,6 +1227,7 @@ export async function runJobCloth(
 					}
 					break; // Exit retry loop on success
 				} catch (apiError: unknown) {
+					rethrowIfCancelled(apiError, signal);
 					// Record failure for circuit breaker
 					circuitBreaker.recordFailure(apiError);
 
@@ -1216,7 +1248,7 @@ export async function runJobCloth(
 							delay: batchDelay,
 							error: errorMessage,
 						});
-						await new Promise((res) => setTimeout(res, batchDelay));
+						await abortableDelay(batchDelay, signal);
 					}
 				}
 			}
@@ -1229,6 +1261,15 @@ export async function runJobCloth(
 					"warn",
 				);
 
+				const recoveryProgress = createProgressReporter(logger, {
+					label: "Stage 3/8: JobCloth",
+					totalUnits: batchTitles.length,
+					unitLabel: "recovery item",
+					phase: "recovery progress",
+				});
+				recoveryProgress.start({
+					batchNumber: Math.floor(i / batch) + 1,
+				});
 				const individualResults = await retryFailedJobTitles(
 					batchTitles,
 					resumeContent,
@@ -1245,6 +1286,15 @@ export async function runJobCloth(
 					showResponseStream,
 					stats,
 					effectiveReasoningEffort,
+					providerRouting,
+					signal,
+					({ jobTitle, success }) => {
+						recoveryProgress.complete({
+							batchNumber: Math.floor(i / batch) + 1,
+							jobTitle,
+							outcome: success ? "recovered" : "failed",
+						});
+					},
 				);
 
 				allAnalysisResults.push(...individualResults);
@@ -1260,6 +1310,13 @@ export async function runJobCloth(
 					`Batch ${Math.floor(i / batch) + 1} failed after ${batchRetryAttempts} attempts. Last error: ${errorMessage}`,
 				);
 			}
+			if (batchSuccess) {
+				primaryCallProgress.complete({
+					batchNumber: Math.floor(i / batch) + 1,
+					totalBatches,
+					jobTitlesInBatch: batchTitles.length,
+				});
+			}
 
 			// Sleep between batches
 			if (sleep > 0 && i + batch < jobTitles.length) {
@@ -1271,7 +1328,7 @@ export async function runJobCloth(
 						sleepSeconds: sleep,
 					},
 				);
-				await new Promise((res) => setTimeout(res, sleep * 1000));
+				await abortableDelay(sleep * 1000, signal);
 			}
 		}
 	}
@@ -1309,29 +1366,31 @@ export async function runJobCloth(
 		);
 	});
 
-	// Add confidence score and analysis metadata
-	const highlyAlignedJobsWithConfidence = highlyAlignedJobs.map((job) => {
-		const analysis = getAnalysisForJob(job.title);
-		if (analysis) {
-			return {
-				...job,
-				confidence: analysis.confidence,
-				rationale: analysis.rationale,
-				isWorthInvestigating: analysis.isWorthInvestigating,
-				isVeryHighlyAligned: analysis.isVeryHighlyAligned,
-			};
-		}
-		return job;
+	// Do not append jobCloth evaluation results to job records; pass only clean job data
+	const cleanPassingJobs = highlyAlignedJobs.map((job) => {
+		const {
+			confidence: _unusedConfidence,
+			rationale: _unusedRationale,
+			isWorthInvestigating: _unusedWorth,
+			isVeryHighlyAligned: _unusedVeryAligned,
+			isHighlyAligned: _unusedAligned,
+			...cleanJob
+		} = job;
+		return cleanJob as JobInterface;
 	});
+
+	// Passing and rejected jobs both completed jobCloth processing and begin the
+	// same cool-off window at this successful classification event.
+	await jobRepository.recordJobClothProcessed(allJobs);
 
 	await fsPromises.writeFile(
 		resolvedOutputFile,
-		JSON.stringify(highlyAlignedJobsWithConfidence, null, 2),
+		JSON.stringify(cleanPassingJobs, null, 2),
 		{ encoding: "utf-8", mode: 0o600 },
 	);
 	await writeArtifactManifest(resolvedOutputFile, "jobCloth", {
 		inputJobs: allJobs.length,
-		outputJobs: highlyAlignedJobsWithConfidence.length,
+		outputJobs: cleanPassingJobs.length,
 		preset: effectivePreset.name,
 		model: effectivePreset.modelId,
 	});
@@ -1342,23 +1401,21 @@ export async function runJobCloth(
 			resolvedOutputFile,
 			effectivePreset.name,
 			effectivePreset.modelId,
-			highlyAlignedJobsWithConfidence.length,
+			cleanPassingJobs.length,
+			jobRepository,
 		);
 	}
 	stats?.incrementCounter("files.written", 1);
 	stats?.incrementCounter(
 		"jobCloth.jobsRejected",
-		allJobs.length - highlyAlignedJobsWithConfidence.length,
+		allJobs.length - cleanPassingJobs.length,
 	);
-	stats?.incrementCounter(
-		"jobCloth.jobsAccepted",
-		highlyAlignedJobsWithConfidence.length,
-	);
+	stats?.incrementCounter("jobCloth.jobsAccepted", cleanPassingJobs.length);
 	stats?.recordSuccess("jobCloth.complete", {
 		inputJobs: allJobs.length,
-		outputJobs: highlyAlignedJobsWithConfidence.length,
+		outputJobs: cleanPassingJobs.length,
 	});
-	return highlyAlignedJobsWithConfidence;
+	return cleanPassingJobs;
 }
 
 export const addJobClothCommand = (
@@ -1448,12 +1505,6 @@ export const addJobClothCommand = (
 					type: "boolean",
 					description:
 						"Display outgoing LLM payload and incoming response for debugging",
-					default: false,
-				})
-				.option("log-payload", {
-					type: "boolean",
-					description:
-						"Save sensitive outbound LLM payload to ./logs (owner-readable only).",
 					default: false,
 				});
 
@@ -1584,21 +1635,6 @@ export const addJobClothCommand = (
 				);
 			}
 
-			if (!typedArgv.disableFileLogging) {
-				const logDir =
-					typeof typedArgv.logDir === "string"
-						? typedArgv.logDir
-						: getLogsDirectory();
-				const logFile =
-					typeof typedArgv.logFile === "string"
-						? typedArgv.logFile
-						: "astroex.log";
-				initializeFileLogging(
-					logDir,
-					`${formatDate(new Date(), "yyyyMMdd_HHmmss")}_JobCloth_${logFile}`,
-					"JobCloth",
-				);
-			}
 			log("JobCloth", "Command started", "info", {
 				preset: typedArgv.preset,
 				inputFile: typedArgv["input-file"],
@@ -1641,7 +1677,6 @@ export const addJobClothCommand = (
 					// Convert single file to array for consistent handling
 					inputFiles = Array.isArray(inputFiles) ? inputFiles : [inputFiles];
 				}
-
 				// Generate timestamped output filename if using default
 				let outputFile = typedArgv["output-file"];
 				if (outputFile === "./data/clothed_jobs.json") {
@@ -1721,8 +1756,6 @@ export const addJobClothCommand = (
 						pingInterval: typedArgv["ping-interval"] as number,
 						openaiTimeout: typedArgv["openai-timeout"] as number,
 						verbose: typedArgv.verbose as boolean,
-						logPayload: typedArgv["log-payload"] as boolean,
-						logDir: (typedArgv["log-dir"] as string) || getLogsDirectory(),
 						preset: typedArgv.preset as string,
 						sleep: typedArgv.sleep as number,
 						batchRetryAttempts: typedArgv["batch-retry-attempts"] as number,
@@ -1785,8 +1818,6 @@ export const addJobClothCommand = (
 				// Always end statistics collection
 				const summary = stats.endCollection();
 				log("JobCloth", "Final statistics:", "info", { summary });
-
-				await closeFileLogging();
 			}
 		},
 	}) as unknown as Argv<GlobalArgs>;

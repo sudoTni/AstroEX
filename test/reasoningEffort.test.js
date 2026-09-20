@@ -84,9 +84,10 @@ async function setupTestEnvironment() {
 	};
 }
 
-function createMockLlmCall(capturedRequests) {
-	return async (request) => {
-		capturedRequests.push(request);
+function createMockLlmCall(capturedRequests, capturedOptions) {
+	return async (request, options) => {
+		capturedRequests.push(JSON.parse(JSON.stringify(request)));
+		capturedOptions?.push(options);
 		const userMsg =
 			request.messages?.find((m) => m.role === "user")?.content || "";
 		if (userMsg.includes("Job Titles") || userMsg.includes("job title")) {
@@ -148,6 +149,7 @@ test("buildPipelineConfig correctly maps phase-specific reasoning effort options
 	// Baseline: no reasoning effort options provided
 	const baseConfig = buildPipelineConfig({});
 	assert.equal(baseConfig.reasoningEffort.jobCloth, undefined);
+	assert.equal(baseConfig.reasoningEffort.remoteEval, undefined);
 	assert.equal(baseConfig.reasoningEffort.jobJudge, undefined);
 	assert.equal(baseConfig.reasoningEffort.makeMaterials, undefined);
 
@@ -155,11 +157,13 @@ test("buildPipelineConfig correctly maps phase-specific reasoning effort options
 	const configured = buildPipelineConfig({
 		reasoningEffort: {
 			jobCloth: "low",
+			remoteEval: "medium",
 			jobJudge: "high",
 			makeMaterials: "max",
 		},
 	});
 	assert.equal(configured.reasoningEffort.jobCloth, "low");
+	assert.equal(configured.reasoningEffort.remoteEval, "medium");
 	assert.equal(configured.reasoningEffort.jobJudge, "high");
 	assert.equal(configured.reasoningEffort.makeMaterials, "max");
 
@@ -167,13 +171,24 @@ test("buildPipelineConfig correctly maps phase-specific reasoning effort options
 	const custom = buildPipelineConfig({
 		reasoningEffort: {
 			jobCloth: "custom-reasoning-1",
+			remoteEval: "custom-remote-level",
 			jobJudge: "o3-mini-high",
 			makeMaterials: "extreme",
 		},
 	});
 	assert.equal(custom.reasoningEffort.jobCloth, "custom-reasoning-1");
+	assert.equal(custom.reasoningEffort.remoteEval, "custom-remote-level");
 	assert.equal(custom.reasoningEffort.jobJudge, "o3-mini-high");
 	assert.equal(custom.reasoningEffort.makeMaterials, "extreme");
+});
+
+test("pipeline launcher uses the registered remoteEval reasoning option", async () => {
+	const launcher = await fs.readFile(
+		path.resolve(__dirname, "..", "astroex_wrapper.bash"),
+		"utf8",
+	);
+	assert.match(launcher, /--re-reasoning-level\s+high\b/);
+	assert.doesNotMatch(launcher, /--re-reasonling-level/);
 });
 
 test("formatLLMRequest includes reasoning_effort only when present and non-empty", () => {
@@ -278,7 +293,6 @@ test("Baseline: all phases omit reasoning_effort when CLI options are not provid
 		"strict-parsing": false,
 		sleep: 0,
 		"eval-mode": 1,
-		logDir: env.logDir,
 	});
 
 	assert.equal(capturedRequests.length, 2);
@@ -299,7 +313,6 @@ test("Baseline: all phases omit reasoning_effort when CLI options are not provid
 		apiKey: "mock-key",
 		targJD: "Job Description for Senior Security Analyst",
 		sleep: 0,
-		logDir: env.logDir,
 	});
 
 	assert.equal(capturedRequests.length, 3);
@@ -363,7 +376,6 @@ test("Phase isolation: --jc-reasoning-effort sets reasoning_effort only on jobCl
 		"strict-parsing": false,
 		sleep: 0,
 		"eval-mode": 1,
-		logDir: env.logDir,
 	});
 
 	assert.equal(capturedRequests.length, 2);
@@ -381,7 +393,6 @@ test("Phase isolation: --jc-reasoning-effort sets reasoning_effort only on jobCl
 		apiKey: "mock-key",
 		targJD: "Job Description for Senior Security Analyst",
 		sleep: 0,
-		logDir: env.logDir,
 	});
 
 	assert.equal(capturedRequests.length, 3);
@@ -448,7 +459,6 @@ test("Phase isolation: --jj-reasoning-effort sets reasoning_effort only on jobJu
 		"jj-reasoning-effort": "max",
 		sleep: 0,
 		"eval-mode": 1,
-		logDir: env.logDir,
 	});
 
 	assert.equal(capturedRequests.length, 2);
@@ -462,7 +472,6 @@ test("Phase isolation: --jj-reasoning-effort sets reasoning_effort only on jobJu
 		apiKey: "mock-key",
 		targJD: "Job Description for Senior Security Analyst",
 		sleep: 0,
-		logDir: env.logDir,
 	});
 
 	assert.equal(capturedRequests.length, 3);
@@ -528,7 +537,6 @@ test("Phase isolation: --mm-reasoning-effort sets reasoning_effort only on makeM
 		"strict-parsing": false,
 		sleep: 0,
 		"eval-mode": 1,
-		logDir: env.logDir,
 	});
 
 	assert.equal(capturedRequests.length, 2);
@@ -547,7 +555,6 @@ test("Phase isolation: --mm-reasoning-effort sets reasoning_effort only on makeM
 		targJD: "Job Description for Senior Security Analyst",
 		"mm-reasoning-effort": "o3-ultra",
 		sleep: 0,
-		logDir: env.logDir,
 	});
 
 	assert.equal(capturedRequests.length, 3);
@@ -604,7 +611,6 @@ test("Simultaneous configuration: multiple flags apply independently to respecti
 		"jj-reasoning-effort": "medium",
 		sleep: 0,
 		"eval-mode": 1,
-		logDir: env.logDir,
 	});
 
 	// makeMaterials with "max"
@@ -616,7 +622,6 @@ test("Simultaneous configuration: multiple flags apply independently to respecti
 		targJD: "Job Description for Senior Security Analyst",
 		"mm-reasoning-effort": "max",
 		sleep: 0,
-		logDir: env.logDir,
 	});
 
 	assert.equal(capturedRequests.length, 3);
@@ -625,7 +630,7 @@ test("Simultaneous configuration: multiple flags apply independently to respecti
 	assert.equal(capturedRequests[2].reasoning_effort, "max");
 });
 
-test("Payload file dumps reflect reasoning_effort when present and omit when absent", async (t) => {
+test("commands propagate reasoning metadata and payload-log stages", async (t) => {
 	const env = await setupTestEnvironment();
 	const priorEnv = {
 		ASTROEX_DATA_DIR: process.env.ASTROEX_DATA_DIR,
@@ -640,7 +645,8 @@ test("Payload file dumps reflect reasoning_effort when present and omit when abs
 
 	const originalCall = llmService.call;
 	const capturedRequests = [];
-	llmService.call = createMockLlmCall(capturedRequests);
+	const capturedOptions = [];
+	llmService.call = createMockLlmCall(capturedRequests, capturedOptions);
 
 	t.after(async () => {
 		llmService.call = originalCall;
@@ -651,7 +657,7 @@ test("Payload file dumps reflect reasoning_effort when present and omit when abs
 		await fs.rm(env.root, { recursive: true, force: true });
 	});
 
-	// Case A: With reasoning effort configured and logPayload: true
+	// Reasoning metadata and every message are retained in the complete payload.
 	const clothedFileWithReasoning = path.join(
 		env.dataDir,
 		"clothed_with_reasoning.json",
@@ -661,26 +667,9 @@ test("Payload file dumps reflect reasoning_effort when present and omit when abs
 		baseUrl: "https://api.example.com",
 		modelId: "mock-model",
 		batch: 10,
-		logPayload: true,
-		logDir: env.logDir,
 		"jc-reasoning-effort": "high",
 	});
 
-	// Find cloth payload dump file
-	const logFilesA = await fs.readdir(env.logDir);
-	const clothDumpA = logFilesA.find(
-		(f) => f.includes("payload") && f.endsWith(".json"),
-	);
-	assert.ok(clothDumpA, "jobCloth payload file should exist");
-	const clothDumpContentA = JSON.parse(
-		await fs.readFile(path.join(env.logDir, clothDumpA), "utf-8"),
-	);
-	assert.equal(clothDumpContentA.reasoning_effort, "high");
-
-	// Clean up logs directory for next check
-	await fs.rm(path.join(env.logDir, clothDumpA), { force: true });
-
-	// Case B: Without reasoning effort and logPayload: true
 	const clothedFileNoReasoning = path.join(
 		env.dataDir,
 		"clothed_no_reasoning.json",
@@ -690,26 +679,8 @@ test("Payload file dumps reflect reasoning_effort when present and omit when abs
 		baseUrl: "https://api.example.com",
 		modelId: "mock-model",
 		batch: 10,
-		logPayload: true,
-		logDir: env.logDir,
 	});
 
-	const logFilesB = await fs.readdir(env.logDir);
-	const clothDumpB = logFilesB.find(
-		(f) => f.includes("payload") && f.endsWith(".json"),
-	);
-	assert.ok(clothDumpB, "jobCloth payload file should exist");
-	const clothDumpContentB = JSON.parse(
-		await fs.readFile(path.join(env.logDir, clothDumpB), "utf-8"),
-	);
-	assert.equal(
-		"reasoning_effort" in clothDumpContentB,
-		false,
-		"jobCloth payload dump must not have reasoning_effort property when omitted",
-	);
-	assert.equal(clothDumpContentB.reasoning_effort, undefined);
-
-	// Case C: makeMaterials payload dump with reasoning effort
 	const presets = await loadPresets();
 	const matPreset = getPreset("makeMaterials", "rop_g5.6-luna_or", presets);
 	await runResumeOptimizationMode(matPreset, {
@@ -717,23 +688,20 @@ test("Payload file dumps reflect reasoning_effort when present and omit when abs
 		apiKey: "mock-key",
 		targJD: "Job Description for Senior Security Analyst",
 		"mm-reasoning-effort": "deep",
-		logPayload: true,
-		logDir: env.logDir,
 		sleep: 0,
 	});
 
-	const logFilesC = await fs.readdir(env.logDir);
-	const matDump = logFilesC.find(
-		(f) =>
-			f.startsWith("makematerials_") &&
-			f.includes("payload") &&
-			f.endsWith(".json"),
+	assert.equal(capturedRequests[0].reasoning_effort, "high");
+	assert.equal(capturedRequests[1].reasoning_effort, undefined);
+	assert.equal(capturedRequests[2].reasoning_effort, "deep");
+	assert.deepEqual(
+		capturedOptions.map((options) => options?.payloadLogStage),
+		["jobCloth", "jobCloth", "makeMaterials"],
 	);
-	assert.ok(matDump, "makeMaterials payload file should exist");
-	const matDumpContent = JSON.parse(
-		await fs.readFile(path.join(env.logDir, matDump), "utf-8"),
-	);
-	assert.equal(matDumpContent.reasoning_effort, "deep");
+	for (const request of capturedRequests) {
+		assert.ok(request.messages.some((message) => message.role === "system"));
+		assert.ok(request.messages.some((message) => message.role === "user"));
+	}
 });
 
 test("Standalone commands support both phase prefix and generic --reasoning-effort alias", async (t) => {
@@ -787,7 +755,6 @@ test("Standalone commands support both phase prefix and generic --reasoning-effo
 		"reasoning-effort": "alias-effort-judge",
 		sleep: 0,
 		"eval-mode": 1,
-		logDir: env.logDir,
 	});
 	assert.equal(capturedRequests[1].reasoning_effort, "alias-effort-judge");
 
@@ -800,7 +767,6 @@ test("Standalone commands support both phase prefix and generic --reasoning-effo
 		targJD: "Job Description for Senior Security Analyst",
 		"reasoning-effort": "alias-effort-materials",
 		sleep: 0,
-		logDir: env.logDir,
 	});
 	assert.equal(capturedRequests[2].reasoning_effort, "alias-effort-materials");
 });
@@ -909,7 +875,6 @@ test("Console output reflects effective reasoning_effort for each LLM phase and 
 			"jj-reasoning-effort": "max",
 			sleep: 0,
 			"eval-mode": 1,
-			logDir: env.logDir,
 		});
 	});
 	assert.ok(
@@ -931,7 +896,6 @@ test("Console output reflects effective reasoning_effort for each LLM phase and 
 			"strict-parsing": false,
 			sleep: 0,
 			"eval-mode": 1,
-			logDir: env.logDir,
 		});
 	});
 	assert.ok(
@@ -949,7 +913,6 @@ test("Console output reflects effective reasoning_effort for each LLM phase and 
 			targJD: "Job Description for Senior Security Analyst",
 			"mm-reasoning-effort": "deep",
 			sleep: 0,
-			logDir: env.logDir,
 		});
 	});
 	assert.ok(
@@ -964,7 +927,6 @@ test("Console output reflects effective reasoning_effort for each LLM phase and 
 			apiKey: "mock-key",
 			targJD: "Job Description for Senior Security Analyst",
 			sleep: 0,
-			logDir: env.logDir,
 		});
 	});
 	assert.ok(
