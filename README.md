@@ -6,7 +6,7 @@
 
 > **AstroEX** is an autonomous, multi-phase job acquisition and tailored application materials generation engine. It combines lightweight, headless job search querying with multi-provider LLM grounding to systematically evaluate opportunities, match candidate qualifications, and produce tailored application packages.
 
-<p align = "center><img width="800" height="510" alt="astroex_terminal" src="https://github.com/user-attachments/assets/b7468468-10d5-4adb-abde-8c88615957f6" /></p>
+<p align = "center"><img width="800" height="510" alt="astroex_terminal" src="https://github.com/user-attachments/assets/743135f7-f6f3-485d-989d-d8bab097330a" /></p>
 
 ---
 
