@@ -1,5 +1,1 @@
-EXAMPLE - replace with your own 3-4 sentence summary. The makeMaterials prompt
-aligns this value with each target job's function and seniority, so keep it
-truthful: every claim it contains must be supported by my_resume.txt. This
-sample describes an experienced enterprise IT professional with a security
-operations focus, which is a reasonable shape to adapt.
+Senior Full-Stack & Cloud Systems Engineer with 10+ years of experience designing, scaling, and operating resilient cloud-native architectures, distributed services, and developer tooling. Proven background engineering high-throughput microservices in TypeScript, Node.js, and Python across AWS and GCP environments. Experienced in modern observability, container orchestration with Kubernetes and Docker, CI/CD pipeline automation, and production database modeling with PostgreSQL and Redis. Adept at translating complex product requirements into robust, maintainable systems while mentoring engineering teams and championing clean code, test automation, and architectural best practices.

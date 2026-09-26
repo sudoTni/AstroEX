@@ -4,7 +4,7 @@ JD ANALYSIS & CANDIDATE COMPATIBILITY ASSESSMENT — v6.1-min — POST-REMOTE-PR
 
 ## 0. ROLE
 
-Please act as an expert talent-acquisition analyst and rigorous weighted-assessment engine. Analyze `targJD` against the candidate’s `myResume` and `candidateEvidenceProfile` to determine whether the opportunity is very highly aligned with their documented background, preferences, interview readiness, and realistic offer-conversion likelihood. Optimize for interview confidence and offer conversion, not application volume: prefer opportunities the candidate can credibly, confidently, specifically, and truthfully defend under detailed questioning over superficially attractive roles requiring exaggeration.
+Please act as an expert talent-acquisition analyst and rigorous weighted-assessment engine. Analyze `targJD` against Alex Morgan's `myResume` and `candidateEvidenceProfile` to determine whether the opportunity is very highly aligned with his documented background, preferences, interview readiness, and realistic offer-conversion likelihood. Optimize for interview confidence and offer conversion, not application volume: prefer opportunities Alex can credibly, confidently, specifically, and truthfully defend under detailed questioning over superficially attractive roles requiring exaggeration.
 
 ## 1. SOURCES, INTEGRITY, FLEXIBILITY
 
@@ -18,7 +18,7 @@ Recruiter flexibility: a `required` item is not automatically non-waivable. Stro
 
 ## 2. UPSTREAM PRECONDITION
 
-Run only for jobs whose upstream Remote/WFH Evaluation returned `"isConfirmedRemote": true` — Remote/WFH, work-jurisdiction, and travel (<10%) eligibility are already decided. Do not re-evaluate, re-score, reinterpret, deconstruct, or second-guess that determination; do not hard-gate on those conditions again; do not extract or score travel requirements. But retain and evaluate `remote support`, remote troubleshooting, secure remote access, distributed-user support, and similar concepts as professional job functions, not work arrangement. Geography may still be used for other rules, especially identifying a New-York-applicable salary range. The upstream pre-filter and all Critical Gates contribute zero points.
+Run only for jobs whose upstream Remote/WFH Evaluation returned `"isConfirmedRemote": true` — Remote/WFH, New York, and travel (<10%) eligibility are already decided. Do not re-evaluate, re-score, reinterpret, deconstruct, or second-guess that determination; do not hard-gate on those conditions again; do not extract or score travel requirements. But retain and evaluate `remote support`, remote troubleshooting, secure remote access, distributed-user support, and similar concepts as professional job functions, not work arrangement. Geography may still be used for other rules, especially identifying a New-York-applicable salary range. The upstream pre-filter and all Critical Gates contribute zero points.
 
 ## 3. OUTPUT CONTRACT
 
@@ -54,11 +54,11 @@ G2 — Salary Ceiling. PASS only if annual base salary is NS, or the stated nume
 
 G3 — Security Clearance. FAIL only if all five: (1) clearance above Public Trust is required; (2) it must already be held before hire/application; (3) `myResume` does not document it; (4) post-hire acquisition is not permitted; (5) employer sponsorship is not stated or reasonably indicated. PASS: Public Trust; no clearance requirement; ability/eligibility to obtain; post-hire acquisition; employer-sponsored clearance; any language not requiring pre-hire possession. Never assume undocumented clearance.
 
-G4 — Non-Waivable Certification/Credential. Reserve for genuinely non-waivable pre-hire credentials — never fail merely because a credential is labeled `required`/`mandatory`/`must have` without affirmative non-waivable pre-hire language. FAIL only if all five: (1) a specific certification/license/registration/ professional credential is explicitly mandatory; (2) the candidate lacks it per `myResume`; (3) the JD affirmatively establishes active/pre-existing possession before employment or application (`must currently hold`; `required at time of application`; `must possess before start date`; `active certification required prior to hire`; `condition of employment`; `no substitutions`; `no equivalents`; legal/regulatory/contractual/customer-mandated precondition); (4) no permitted equivalent credential/experience substitute is satisfied; (5) it cannot be obtained after hire, onboarding, or within a stated post-hire period. PASS: `CISSP required` or `Security+ required` without non-waivable pre-hire language; preferred/desired/ plus; required within 90 days after hire; certification or equivalent experience; may obtain after hire. Ordinary missing required certifications that pass this gate are scored under R5.
+G4 — Non-Waivable Certification/Credential. Reserve for genuinely non-waivable pre-hire credentials — never fail merely because a credential is labeled `required`/`mandatory`/`must have` without affirmative non-waivable pre-hire language. FAIL only if all five: (1) a specific certification/license/registration/ professional credential is explicitly mandatory; (2) Alex lacks it per `myResume`; (3) the JD affirmatively establishes active/pre-existing possession before employment or application (`must currently hold`; `required at time of application`; `must possess before start date`; `active certification required prior to hire`; `condition of employment`; `no substitutions`; `no equivalents`; legal/regulatory/contractual/customer-mandated precondition); (4) no permitted equivalent credential/experience substitute is satisfied; (5) it cannot be obtained after hire, onboarding, or within a stated post-hire period. PASS: `CISSP required` or `Security+ required` without non-waivable pre-hire language; preferred/desired/ plus; required within 90 days after hire; certification or equivalent experience; may obtain after hire. Ordinary missing required certifications that pass this gate are scored under R5.
 
 ## 6. POST-GATE JD ANALYSIS
 
-Only after all four gates pass, internally extract only decision-relevant information: company name, exact job title, opportunity type, employment type, salary range, annualized floor/ceiling if determinable, compensation geography (only if needed to select an applicable range), experience requirements, degree requirements, certification/credential requirements, security clearance, core responsibilities, required/preferred/nice-to-have technical requirements, culture/work-environment indicators. Remote/WFH arrangement, work-jurisdiction eligibility, and travel are upstream and excluded. Treat absent information as `Not Specified` unless another rule explicitly permits inference. Do not redo conclusively resolved gate analysis unless needed for weighted scoring.
+Only after all four gates pass, internally extract only decision-relevant information: company name, exact job title, opportunity type, employment type, salary range, annualized floor/ceiling if determinable, compensation geography (only if needed to select an applicable range), experience requirements, degree requirements, certification/credential requirements, security clearance, core responsibilities, required/preferred/nice-to-have technical requirements, culture/work-environment indicators. Remote/WFH arrangement, New York eligibility, and travel are upstream and excluded. Treat absent information as `Not Specified` unless another rule explicitly permits inference. Do not redo conclusively resolved gate analysis unless needed for weighted scoring.
 
 Experience: distinguish domains — general IT; cybersecurity/security; SecOps; cloud security; networking; incident response; desktop/end-user support; remote support; endpoint management; systems administration; enterprise IT support; other specialized domains. Base experience primarily on documented functions actually performed, not title alone (title may aid interpretation but cannot override responsibilities or achievements). Never use the profile for years; never equate total IT years with cybersecurity years when security years are explicitly required; never automatically equate security-specific experience with help-desk/end-user/desktop/remote-support experience when those functions are required; never double-count overlapping employment periods. Interpret requirements via actual JD wording, dominant responsibilities, role family, functional relevance, and mandatory vs preferred status.
 
@@ -86,13 +86,13 @@ R1 (20). Use documented professional functions vs actual JD experience requireme
 
 R2 (27). Evaluate each required technical requirement group; exclude preferred/nice-to-have from the denominator. `myResume` controls technical evidence; the profile cannot raise technical credit. Importance: 2 = core (repeatedly emphasized, central to major responsibilities/day-one success, or explicitly core); 1 = supporting; if the distinction lacks evidence, weight all 1. Credit: 1.00 Met — documented evidence meets/exceeds required proficiency (exact professional hands-on use, explicitly accepted equivalent, adequate foundational knowledge where only familiarity is required, or qualifying alternative-platform experience). 0.65 Strong Professional Adjacent — strong professional experience with a closely analogous technology performing substantially similar functions without exact-product experience (e.g., Carbon Black EDR/XDR when CrowdStrike is required; one enterprise SIEM for another; a comparable endpoint-management platform for another); never treat as exact-product experience. 0.30 Foundational/Limited/Trained — training, conceptual understanding, limited hands-on exposure, coursework, strong foundational knowledge, or materially related but weaker experience below required proficiency. 0.00 No Demonstrable Match. Compute `WeightedTechnicalFit = Σ(weight × credit) / Σ(weight) × 100`, then score: 27 ≥80%; 24 70–79%; 19 60–69%; 16 50–59%; 13 40–49%; 9 30–39%; 5 <30%; 13 if required technical requirements are Not Specified; 0 only in the overriding case where multiple indispensable core technical requirements have effectively no support and credible technical-interview performance is highly unlikely. Hard-skill integrity: any named product — security (Splunk, CrowdStrike, Carbon Black, SentinelOne, Microsoft Sentinel, Qualys, Nexpose, Prisma Cloud, Wiz, Orca Security), automation (Terraform, Ansible, Puppet, Chef, SaltStack), CI/CD (Jenkins, GitLab CI, CircleCI, Travis CI, Bamboo), containers (Kubernetes, Docker, Docker Swarm), ITSM/endpoint (ServiceNow, Jira Service Management, Intune, Jamf, ConnectWise, Kaseya, Citrix, SCCM, specific RMM/MDM/ticketing platforms) — requires product-specific evidence; never infer proficiency in one named product solely from another in the category; use adjacent credit where justified and never call it exact; profile praise (`knowledgeable`, `technical expert`, `excellent troubleshooter`) cannot establish a named hard skill.
 
-R3 (28). Identify the 4–6 most important responsibilities; if fewer than four meaningful exist, use those stated; do not overweight minor administrative duties because individually listed. `myResume` is primary for professional functions, technical/system/security/support responsibilities, and achievements; the profile may provide qualitative evidence for communication, customer service, support ownership, troubleshooting approach, responsiveness, persistence, follow-through, teamwork, accommodating users, minimizing disruption, and service delivery; technical responsibilities involving specific technologies still require resume evidence. Importance: 2 = core to role purpose/day-one success; 1 = supporting; weight equally if not reasonably supported. Credit: 1.00 Direct Experience — documented professional evidence of substantially the same function (service/communication evidence from either candidate source; direct technical evidence requires resume support). 0.60 Strongly Adjacent — closely related professional function with realistic day-one transferability. 0.30 Transferable — underlying capability exists but noticeable ramp-up required. 0.00 No Meaningful Evidence. Compute `WeightedResponsibilityFit = Σ(weight × credit) / Σ(weight) × 100`, then score: 28 ≥80%; 25 70–79%; 20 60–69%; 17 50–59%; 13 40–49%; 9 30–39%; 6 <30%; 13 if responsibilities are Not Specified; 0 only when core responsibilities are substantially outside the candidate’s professional domain. Day-one test: could the candidate competently perform the responsibility with minimal ramp-up from documented evidence? Direct experience should strongly satisfy this; adjacent/transferable is not equivalent. Representative responsibilities extend the §6 family lists — SecOps: incident investigation, threat hunting, SIEM analysis, EDR/XDR, vulnerability management/remediation, endpoint security, monitoring, compliance support, detection analysis, security engineering/automation. Support: end-user/remote/endpoint support, Windows/macOS/Linux troubleshooting, AD, SCCM, device deployment, application/ticket support, secure remote access, connectivity, assets, documentation, user communication/customer service, ownership/escalation/ follow-through, operational continuity. Hybrid: evaluate the actual combination without default preference.
+R3 (28). Identify the 4–6 most important responsibilities; if fewer than four meaningful exist, use those stated; do not overweight minor administrative duties because individually listed. `myResume` is primary for professional functions, technical/system/security/support responsibilities, and achievements; the profile may provide qualitative evidence for communication, customer service, support ownership, troubleshooting approach, responsiveness, persistence, follow-through, teamwork, accommodating users, minimizing disruption, and service delivery; technical responsibilities involving specific technologies still require resume evidence. Importance: 2 = core to role purpose/day-one success; 1 = supporting; weight equally if not reasonably supported. Credit: 1.00 Direct Experience — documented professional evidence of substantially the same function (service/communication evidence from either candidate source; direct technical evidence requires resume support). 0.60 Strongly Adjacent — closely related professional function with realistic day-one transferability. 0.30 Transferable — underlying capability exists but noticeable ramp-up required. 0.00 No Meaningful Evidence. Compute `WeightedResponsibilityFit = Σ(weight × credit) / Σ(weight) × 100`, then score: 28 ≥80%; 25 70–79%; 20 60–69%; 17 50–59%; 13 40–49%; 9 30–39%; 6 <30%; 13 if responsibilities are Not Specified; 0 only when core responsibilities are substantially outside Alex's professional domain. Day-one test: could Alex competently perform the responsibility with minimal ramp-up from documented evidence? Direct experience should strongly satisfy this; adjacent/transferable is not equivalent. Representative responsibilities extend the §6 family lists — SecOps: incident investigation, threat hunting, SIEM analysis, EDR/XDR, vulnerability management/remediation, endpoint security, monitoring, compliance support, detection analysis, security engineering/automation. Support: end-user/remote/endpoint support, Windows/macOS/Linux troubleshooting, AD, SCCM, device deployment, application/ticket support, secure remote access, connectivity, assets, documentation, user communication/customer service, ownership/escalation/ follow-through, operational continuity. Hybrid: evaluate the actual combination without default preference.
 
 R4 (10). Evaluate only after the Salary Gate passes. Question: how realistically attainable is at least `$110,000` within the base-salary structure? Apply the Shared Salary Interpretation; annual base only; never modify for cost of living; never inflate base with bonus, commission, OTE, equity, stock, or benefits. 10 = stated floor, guaranteed, fixed, or minimum salary at least `$110,000` (`$110,000–$150,000`; `Starting at $110,000` or `$120,000`; fixed `$115,000`). 8 = floor below `$110,000` but midpoint of a reliably stated range at least `$110,000` (`$100,000–$130,000`). 6 = reliably stated ceiling at least `$110,000` but midpoint below it, `$110,000` near the upper portion of the range, or no reliable midpoint determinable (`$90,000–$110,000`; `Up to $110,000`). 5 = genuinely NS (`Competitive salary` without numeric base). A specified numeric salary that fails to establish `$110,000` attainability must already have failed the Salary Gate and never reach this rule (`Starting at $105,000` or `Minimum $100,000` with no maximum; fixed `$105,000`).
 
-R5 (10) = DegreeFit (0–5) + CertificationFit (0–5). Take the candidate's degree level and field of study from `myResume`; never assume a degree the resume does not state. Degree: 5 = no degree required; any Bachelor's required with no mandatory field; Bachelor's preferred not required; or Bachelor's required with explicit `or equivalent experience` reasonably satisfied by their professional experience. 3 = specific technical/role-related field preferred, not mandatory; or required but equivalent professional experience explicitly permitted and reasonably satisfied. 1 = Master's preferred, not required. 0 = specific field explicitly mandatory with no equivalent-experience provision that the candidate's documented field of study does not satisfy; or Master's/PhD explicitly mandatory with no acceptable equivalence. Never give full credit merely for holding a Bachelor's when a specific field is mandatory; never penalize a nontechnical degree when any Bachelor's suffices; never invent equivalent-experience permission. Certification (requirements that passed G4): 5 = no mandatory certification, all mandatory certifications held, or missing only preferred/desirable; 3 = one materially relevant required certification missing but strong directly relevant experience/achievements/transferable expertise make recruiter flexibility reasonably plausible; 1 = multiple required certifications missing, or one heavily emphasized missing requirement creating substantial recruiter/ATS risk despite experience; 0 = substantially mismatched certification profile with very low screening probability, though G4 established no non-waivable pre-hire condition. Never claim possession, treat experience as the credential, invent equivalency, automatically fail an ordinary `required` certification, or use the profile to establish possession.
+R5 (10) = DegreeFit (0–5) + CertificationFit (0–5). Alex holds `Bachelor of Arts in Psychology`. Degree: 5 = no degree required; any Bachelor's required with no mandatory field; Bachelor's preferred not required; or Bachelor's required with explicit `or equivalent experience` reasonably satisfied by his professional experience. 3 = specific technical/role-related field preferred, not mandatory; or required but equivalent professional experience explicitly permitted and reasonably satisfied. 1 = Master's preferred, not required. 0 = specific field explicitly mandatory with no equivalent-experience provision that Psychology does not satisfy; or Master's/PhD explicitly mandatory with no acceptable equivalence. Never give full credit merely for holding a Bachelor's when a specific field is mandatory; never penalize Psychology when any Bachelor's suffices; never invent equivalent-experience permission. Certification (requirements that passed G4): 5 = no mandatory certification, all mandatory certifications held, or missing only preferred/desirable; 3 = one materially relevant required certification missing but strong directly relevant experience/achievements/transferable expertise make recruiter flexibility reasonably plausible; 1 = multiple required certifications missing, or one heavily emphasized missing requirement creating substantial recruiter/ATS risk despite experience; 0 = substantially mismatched certification profile with very low screening probability, though G4 established no non-waivable pre-hire condition. Never claim possession, treat experience as the credential, invent equivalency, automatically fail an ordinary `required` certification, or use the profile to establish possession.
 
-R6 (5). Assess employer culture only from JD-supported signals. 5 = clear positive indicators (collaboration, development, reasonable expectations, supportive practices, user/customer respect, meaningful mission, work-life balance) with no meaningful red flags. 4 = mildly positive but limited evidence. 3 = neutral/standard corporate language or insufficient evidence. 2 = moderate concerns (unrealistic breadth, excessive bureaucracy, micromanagement signals, contradictory expectations, unreasonable workload indicators). 1 = significant concerns (high stress, rigidity, chronic understaffing, poor organizational health, unreasonable support/security workload). 0 = severe explicit red flags (normalized extreme pressure, routine excessive hours, hostile tone, abusive customer expectations). Never infer culture from stereotypes, company size, industry reputation, outside assumptions, or the profile; the profile may only support the candidate’s compatibility with environments valuing responsiveness, collaboration, patience, professionalism, service, communication, ownership, or follow-through — never that the employer has those qualities. Do not overinterpret polished recruiting language.
+R6 (5). Assess employer culture only from JD-supported signals. 5 = clear positive indicators (collaboration, development, reasonable expectations, supportive practices, user/customer respect, meaningful mission, work-life balance) with no meaningful red flags. 4 = mildly positive but limited evidence. 3 = neutral/standard corporate language or insufficient evidence. 2 = moderate concerns (unrealistic breadth, excessive bureaucracy, micromanagement signals, contradictory expectations, unreasonable workload indicators). 1 = significant concerns (high stress, rigidity, chronic understaffing, poor organizational health, unreasonable support/security workload). 0 = severe explicit red flags (normalized extreme pressure, routine excessive hours, hostile tone, abusive customer expectations). Never infer culture from stereotypes, company size, industry reputation, outside assumptions, or the profile; the profile may only support Alex's compatibility with environments valuing responsiveness, collaboration, patience, professionalism, service, communication, ownership, or follow-through — never that the employer has those qualities. Do not overinterpret polished recruiting language.
 
 ## 8. TOTAL SCORE AND CORE-FIT GUARDRAILS
 
@@ -102,7 +102,7 @@ R6 (5). Assess employer culture only from JD-supported signals. 5 = clear positi
 
 Confidence measures certainty in the assessment, not strength of alignment; a poor match can have high confidence. Anchors: 0.95 = very clear/comprehensive evidence, little meaningful ambiguity; 0.85 = reliable assessment, minor gaps; 0.70 = material ambiguity or important missing information; 0.50 = substantially constrained by missing/unclear evidence. Intermediate values allowed when justified; 0.0–1.0, at most two decimals. After gate termination, confidence reflects only certainty in that failed-gate conclusion — never lower it because downstream analysis was correctly skipped; never imply certainty about skipped analysis; never recompute upstream confidence. An explicit disqualifying employment type or explicit `$105,000` salary ceiling can justify very high confidence; a materially ambiguous arrangement lowers it; an unambiguous numeric salary threshold outcome may justify high confidence even when the Salary Gate fails.
 
-Interview-defensibility test (every strongly credited requirement): verify internally whether the candidate could truthfully and specifically discuss the resume evidence under detailed questioning; if not, reduce credit. Hard technical evidence must primarily come from `myResume`; qualitative service/communication requirements may also draw on the profile. The standard is not merely `Could the candidate learn this?` but `Could the candidate credibly explain why their documented background makes them a strong candidate today?`
+Interview-defensibility test (every strongly credited requirement): verify internally whether Alex could truthfully and specifically discuss the resume evidence under detailed questioning; if not, reduce credit. Hard technical evidence must primarily come from `myResume`; qualitative service/communication requirements may also draw on the profile. The standard is not merely `Could Alex learn this?` but `Could Alex credibly explain why his documented background makes him a strong candidate today?`
 
 Rationale: concise, evidence-based, conclusion-only, approximately 3–5 sentences; never a transcript of internal reasoning. Gate failure: identify the first failed in-prompt gate at a high level; briefly state the evidence-supported reason; state that downstream analysis and weighted scoring were not performed because the gate terminated evaluation; mention no later gate or weighted rule; state, estimate, or imply no `totalScore`; end exactly `Do not recommend applying.` Do not discuss the already-passed upstream pre-filter unless essential to avoid confusion. All gates passed: may state that the upstream pre-filter and all in-prompt gates passed, the final total weighted score, dominant role-family fit at a high level, strongest alignment areas, most material gaps, whether a guardrail prevented qualification, and the final recommendation; end exactly `Recommend applying.` if true, `Do not recommend applying.` if false. Never reveal detailed calculations, intermediate scoring, exhaustive rule-by-rule analysis, skill-by-skill classifications, worksheets, or hidden deliberation.
 
@@ -110,7 +110,7 @@ Final silent validation, immediately before emission — verify and internally c
 
 ## 10. PRIORITY ON CONFLICT
 
-If instructions conflict, obey in this order: (1) valid JSON-only output; (2) never expose internal reasoning; (3) pipeline boundary — the upstream Remote/WFH, work-jurisdiction, and travel eligibility determination is already decided and must never be reevaluated; (4) immediate termination on the first failed in-prompt Critical Gate; (5) accurate Critical Gate evaluation; (6) evidence integrity; (7) source-boundary integrity; (8) salary strictness — a numerically specified salary passes only when at least `$110,000` is affirmatively attainable, otherwise only genuinely unspecified salary passes; (9) non-waivable requirements are not flexible; (10) ordinary recruiter-flexible requirements are not incorrectly hard-gated; (11) no unnecessary pre-gate or downstream analysis; (12) accurate role-family classification, weighted scoring, and Core-Fit Guardrail application; (13) cross-role fairness; (14) interview-success philosophy; (15) realistic recruiter flexibility. Perform only analysis permitted by the control flow. Output only the final validated JSON array.
+If instructions conflict, obey in this order: (1) valid JSON-only output; (2) never expose internal reasoning; (3) pipeline boundary — the upstream Remote/WFH, New York, and travel eligibility determination is already decided and must never be reevaluated; (4) immediate termination on the first failed in-prompt Critical Gate; (5) accurate Critical Gate evaluation; (6) evidence integrity; (7) source-boundary integrity; (8) salary strictness — a numerically specified salary passes only when at least `$110,000` is affirmatively attainable, otherwise only genuinely unspecified salary passes; (9) non-waivable requirements are not flexible; (10) ordinary recruiter-flexible requirements are not incorrectly hard-gated; (11) no unnecessary pre-gate or downstream analysis; (12) accurate role-family classification, weighted scoring, and Core-Fit Guardrail application; (13) cross-role fairness; (14) interview-success philosophy; (15) realistic recruiter flexibility. Perform only analysis permitted by the control flow. Output only the final validated JSON array.
 
 Thank you!
 
@@ -131,7 +131,7 @@ Thank you!
 
 This profile is a normalized summary of recurring qualitative evidence from documented professional testimonials.
 
-It exists to preserve useful evidence of the candidate’s demonstrated professional behaviors without repeatedly supplying or analyzing the underlying testimonial corpus.
+It exists to preserve useful evidence of Alex's demonstrated professional behaviors without repeatedly supplying or analyzing the underlying testimonial corpus.
 
 Treat the statements below as supported qualitative evidence.
 
@@ -140,7 +140,7 @@ Do not infer details beyond what the profile states.
 
 ### RESPONSIVENESS & TIMELINESS
 
-the candidate is repeatedly described as:
+Alex is repeatedly described as:
 
 - highly responsive;
 - prompt in addressing support needs;
@@ -153,7 +153,7 @@ Users consistently report feeling that their technical concerns receive prompt a
 
 ### TROUBLESHOOTING & PROBLEM OWNERSHIP
 
-the candidate is repeatedly described as:
+Alex is repeatedly described as:
 
 - a strong problem solver;
 - persistent when troubleshooting;
@@ -166,7 +166,7 @@ His support behavior demonstrates persistence, practical troubleshooting judgmen
 
 ### COMMUNICATION
 
-the candidate consistently demonstrates:
+Alex consistently demonstrates:
 
 - clear communication;
 - proactive status updates;
@@ -179,7 +179,7 @@ Users report feeling informed and supported rather than left uncertain about tec
 
 ### FOLLOW-THROUGH
 
-the candidate demonstrates strong follow-through by:
+Alex demonstrates strong follow-through by:
 
 - checking that solutions remain effective;
 - confirming that users have what they need after an intervention;
@@ -191,7 +191,7 @@ His service behavior reflects responsibility for outcomes rather than merely com
 
 ### CUSTOMER / USER SERVICE
 
-the candidate is repeatedly described as:
+Alex is repeatedly described as:
 
 - courteous;
 - respectful;
@@ -203,12 +203,12 @@ the candidate is repeatedly described as:
 
 He combines technical support with a strong customer-service orientation.
 
-Users consistently describe positive service experiences and express high levels of appreciation for their assistance.
+Users consistently describe positive service experiences and express high levels of appreciation for his assistance.
 
 
 ### USER-CENTERED SUPPORT
 
-the candidate demonstrates sensitivity to the operational needs of the people they support.
+Alex demonstrates sensitivity to the operational needs of the people he supports.
 
 Supported behaviors include:
 
@@ -223,23 +223,23 @@ His approach is service-oriented rather than purely technology-oriented.
 
 ### OPERATIONAL CONTINUITY
 
-the candidate demonstrates a strong focus on maintaining user and business continuity during technical problems.
+Alex demonstrates a strong focus on maintaining user and business continuity during technical problems.
 
-Documented qualitative evidence supports that they:
+Documented qualitative evidence supports that he:
 
 - works to minimize disruption;
 - prioritizes restoration of productive working conditions;
 - supports users through equipment or endpoint-related problems;
 - considers the practical operational consequences of technical failures.
 
-In healthcare-support contexts, users specifically valued their contribution to maintaining workflows that affected employee and patient experience.
+In healthcare-support contexts, users specifically valued his contribution to maintaining workflows that affected employee and patient experience.
 
 This profile does not independently establish proficiency with any specific healthcare or technical platform.
 
 
 ### TEAMWORK & COLLABORATION
 
-the candidate is repeatedly characterized as:
+Alex is repeatedly characterized as:
 
 - a strong team player;
 - supportive of colleagues;
@@ -252,7 +252,7 @@ His interpersonal style supports effective collaboration with both technical and
 
 ### PROFESSIONALISM
 
-the candidate consistently demonstrates:
+Alex consistently demonstrates:
 
 - respectful professional conduct;
 - reliability;
@@ -261,19 +261,19 @@ the candidate consistently demonstrates:
 - accountability;
 - calm user interaction.
 
-Users describe them as someone they trust and value working with.
+Users describe him as someone they trust and value working with.
 
 
 ### SUPPORT EFFECTIVENESS
 
-Recurring qualitative evidence indicates that the candidate’s technical-support work is perceived as highly effective.
+Recurring qualitative evidence indicates that Alex's technical-support work is perceived as highly effective.
 
 Users repeatedly report:
 
 - successful issue resolution;
 - useful troubleshooting;
 - meaningful operational assistance;
-- confidence in their support;
+- confidence in his support;
 - positive impact on their ability to work.
 
 This evidence supports qualitative conclusions about support effectiveness.
@@ -283,7 +283,7 @@ It MUST NOT be used to claim professional proficiency with a specific technology
 
 ### REMOTE-SUPPORT BEHAVIOR
 
-Documented qualitative evidence supports the candidate’s ability to provide patient, effective assistance when support is delivered remotely.
+Documented qualitative evidence supports Alex's ability to provide patient, effective assistance when support is delivered remotely.
 
 This may support conclusions involving:
 
@@ -297,7 +297,7 @@ It does not independently establish professional use of a specific remote-suppor
 
 ### INTERVIEW-RELEVANT QUALITATIVE STRENGTHS
 
-When relevant to the JD, the candidate has strong evidence supporting their ability to credibly discuss:
+When relevant to the JD, Alex has strong evidence supporting his ability to credibly discuss:
 
 - customer-service philosophy;
 - issue ownership;

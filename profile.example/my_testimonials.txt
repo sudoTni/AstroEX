@@ -1,27 +1,7 @@
-# testimonials for the sample candidate. EXAMPLE CONTENT - replace with quotes
-# about yourself (or about a colleague you are permitted to quote).
-#
-# The makeMaterials prompt treats this file as bounded qualitative evidence of
-# professional behaviours: responsiveness, troubleshooting, professionalism,
-# patience, communication, follow-through, escalation, teamwork, and minimizing
-# disruption. It may NOT establish named technology experience, years of
-# experience, certifications, education, clearance, or salary. Keep entries to
-# one or two sentences and attribute them to a role rather than a person, and
-# never fabricate a quote you did not receive.
-#
-# The sample below is clearly illustrative, not a real third-party statement.
-# Delete these lines once you add your own.
+"Alex is one of the most reliable and thorough engineers I have ever worked with. Whenever we faced challenging architectural scaling issues, Alex broke them down into clear, incremental milestones and delivered clean, highly maintainable solutions ahead of schedule."
 
-"Responsive and patient with non-technical staff, and unusually good at explaining technical problems in plain language."
+"An exceptional team player and mentor. Alex raised our entire engineering team's standard for code quality and test automation. The observability framework Alex built saved us dozens of hours during production deployments."
 
-"[Role, previous employer]: consistently the first person to pick up an escalation and the last to close it out, and kept users working throughout every incident window."
+"Alex combines strong technical ownership with great communication skills. In cross-functional meetings, Alex always translates complex technical trade-offs into practical product impact that everyone can understand and align with."
 
-"Calm and methodical under pressure. Takes ownership of a problem end to end rather than escalating early, and documents the fix so the next person does not repeat it."
-
-"Brings out the best in a team: shares context generously, and is generous with credit when a fix depends on several people."
-
-"Explained a complicated migration to non-technical stakeholders in a way that actually reduced their anxiety instead of adding to it."
-
-"Follows through on commitments. If something is going to slip, you hear about it early enough to plan for it."
-
-"Extremely courteous with users, including when they are frustrated, and handles escalations with the same professionalism as routine requests."
+"Working with Alex on our microservices migration was a fantastic experience. The attention to edge cases, system reliability, and zero-downtime cutovers made an otherwise daunting project go off without a hitch."

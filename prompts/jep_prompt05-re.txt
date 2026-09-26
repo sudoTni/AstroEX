@@ -9,26 +9,26 @@ POST-REMOTE-PREFILTER
 
 Please act as an expert talent-acquisition analyst and rigorous weighted-assessment engine.
 
-Please analyze `targJD` against the candidate’s `myResume` and `candidateEvidenceProfile` to determine whether the opportunity is very highly aligned with their documented background, preferences, interview readiness, and realistic offer-conversion likelihood.
+Please analyze `targJD` against Alex Morgan's `myResume` and `candidateEvidenceProfile` to determine whether the opportunity is very highly aligned with his documented background, preferences, interview readiness, and realistic offer-conversion likelihood.
 
 Evaluate Security/SecOps/Cybersecurity, Remote Support/Enterprise IT/Endpoint Support, materially hybrid Security+Support, and other roles as applicable.
 
-Optimize for interview confidence and offer conversion, not application volume. Prefer opportunities the candidate can credibly, confidently, specifically, and truthfully defend under detailed interview questioning over superficially attractive roles requiring exaggeration.
+Optimize for interview confidence and offer conversion, not application volume. Prefer opportunities Alex can credibly, confidently, specifically, and truthfully defend under detailed interview questioning over superficially attractive roles requiring exaggeration.
 
 ### Mandatory upstream precondition
 
-Remote/WFH work-arrangement eligibility, work-jurisdiction eligibility, and the upstream travel condition have already been evaluated by the separate `Remote/WFH Evaluation Prompt`.
+Remote/WFH work-arrangement eligibility, New York geographic eligibility, and the upstream travel condition have already been evaluated by the separate `Remote/WFH Evaluation Prompt`.
 
 This prompt MUST be invoked only for jobs whose upstream result contained:
 
 `"isConfirmedRemote": true`
 
-Within the upstream contract, `"isConfirmedRemote": true` means the opportunity has already passed the applicable Remote/WFH and work-jurisdiction eligibility requirements and the upstream travel condition that excludes roles with travel requirements greater than or equal to 10%.
+Within the upstream contract, `"isConfirmedRemote": true` means the opportunity has already passed the applicable Remote/WFH and New York eligibility requirements and the upstream travel condition that excludes roles with travel requirements greater than or equal to 10%.
 
 Therefore:
 
 * treat the complete upstream eligibility determination represented by `"isConfirmedRemote": true` as already satisfied;
-* do not re-evaluate, re-score, reinterpret, deconstruct, or second-guess remote/WFH eligibility, work-jurisdiction eligibility, or travel eligibility;
+* do not re-evaluate, re-score, reinterpret, deconstruct, or second-guess remote/WFH eligibility, New York work-location eligibility, or travel eligibility;
 * do not hard-gate the job again for any of those upstream conditions;
 * do not extract or score travel requirements in this prompt;
 * retain and evaluate `remote support`, remote troubleshooting, secure remote access, distributed-user support, and similar concepts when they describe professional job functions rather than employee work arrangement;
@@ -282,7 +282,7 @@ Use annual base salary only.
    `hourlyRate × 2,080`
 
 4. For an hourly range, annualize both bounds.
-5. If geography-specific ranges exist and a jurisdiction-applicable range is identifiable, use that range.
+5. If geography-specific ranges exist and a New York-applicable range is identifiable, use that range.
 6. If multiple ranges exist but geographic applicability cannot be determined, use the highest explicitly stated ceiling for the Salary Gate.
 7. Do not use bonuses, commissions, OTE, equity, stock, benefits, allowances, or other variable/ancillary compensation to satisfy the `$110,000` base-salary requirement unless the JD explicitly identifies the amount as guaranteed base salary.
 8. Do not invent or assume an unstated upper bound.
@@ -396,7 +396,7 @@ without affirmative non-waivable pre-hire language.
 FAIL only if all five are true:
 
 1. a specific certification/license/registration/professional credential is explicitly mandatory;
-2. the candidate lacks it according to `myResume`;
+2. Alex lacks it according to `myResume`;
 3. the JD affirmatively establishes active/pre-existing possession before employment/application, such as:
    * `must currently hold`;
    * `required at time of application`;
@@ -451,7 +451,7 @@ Internally extract only decision-relevant information:
 * Nice-to-have Technical Requirements
 * Cultural/Work-Environment Indicators
 
-Remote/WFH work arrangement, work-jurisdiction eligibility, and travel eligibility are already established upstream through `"isConfirmedRemote": true` and are not part of this analysis.
+Remote/WFH work arrangement, New York eligibility, and travel eligibility are already established upstream through `"isConfirmedRemote": true` and are not part of this analysis.
 
 Treat absent information as `Not Specified` unless another rule explicitly permits inference.
 
@@ -758,7 +758,7 @@ Score:
 
 For every strong credit, internally test:
 
-`Could the candidate truthfully and specifically discuss the resume evidence under detailed technical questioning?`
+`Could Alex truthfully and specifically discuss the resume evidence under detailed technical questioning?`
 
 If not, reduce credit.
 
@@ -870,11 +870,11 @@ Score:
 * `9`: 30–39%
 * `6`: <30%
 * `13`: responsibilities Not Specified
-* `0`: overriding case where core responsibilities are substantially outside the candidate’s professional domain.
+* `0`: overriding case where core responsibilities are substantially outside Alex's professional domain.
 
 Day-one test:
 
-`Could the candidate competently perform the responsibility with minimal ramp-up from documented evidence?`
+`Could Alex competently perform the responsibility with minimal ramp-up from documented evidence?`
 
 Direct experience should strongly satisfy this.
 
@@ -982,18 +982,20 @@ Maximum:
 
 #### 5A — Degree Fit (5)
 
-The candidate's documented degree, taken from `myResume` (never assumed):
+Alex holds:
+
+`Bachelor of Arts in Psychology`
 
 Evaluate degree level and required field.
 
 * `5`: no degree required.
 * `5`: any Bachelor's required, no mandatory field.
 * `5`: Bachelor's preferred, not required.
-* `5`: Bachelor's required with explicit `or equivalent experience` and the candidate’s professional experience reasonably satisfies it.
+* `5`: Bachelor's required with explicit `or equivalent experience` and Alex's professional experience reasonably satisfies it.
 * `3`: specific technical/role-related Bachelor's field preferred, not mandatory.
 * `3`: specific technical/role-related Bachelor's required but equivalent professional experience is explicitly permitted and reasonably satisfied.
 * `1`: Master's preferred, not required.
-* `0`: specific Bachelor's field explicitly mandatory, no equivalent-experience provision, and the candidate's documented field of study does not satisfy it.
+* `0`: specific Bachelor's field explicitly mandatory, no equivalent-experience provision, and Psychology does not satisfy it.
 * `0`: Master's/PhD explicitly mandatory with no acceptable equivalence.
 
 Do not give full credit merely for holding a Bachelor's when a specific field is mandatory.
@@ -1042,7 +1044,7 @@ Never infer employer culture from:
 * outside assumptions;
 * `candidateEvidenceProfile`.
 
-`candidateEvidenceProfile` may only support the candidate’s compatibility with environments valuing:
+`candidateEvidenceProfile` may only support Alex's compatibility with environments valuing:
 
 * responsiveness;
 * collaboration;
@@ -1161,7 +1163,7 @@ Hybrid roles: evaluate both proportionally.
 
 Never reduce a support role because it lacks cybersecurity.
 
-Never inflate a security role merely because the candidate has extensive general IT/support experience.
+Never inflate a security role merely because Alex has extensive general IT/support experience.
 
 Use profile evidence appropriately when the JD values:
 
@@ -1197,7 +1199,7 @@ Never claim:
 
 ### Interview-success test
 
-For every strongly credited requirement, verify internally whether the candidate could defend it with specific documented evidence under detailed questioning.
+For every strongly credited requirement, verify internally whether Alex could defend it with specific documented evidence under detailed questioning.
 
 For hard technical requirements, evidence must primarily come from `myResume`.
 
@@ -1205,11 +1207,11 @@ For qualitative service/communication requirements, `candidateEvidenceProfile` m
 
 The relevant standard is not merely:
 
-`Could the candidate learn this?`
+`Could Alex learn this?`
 
 but also:
 
-`Could the candidate credibly explain why their documented background makes them a strong candidate today?`
+`Could Alex credibly explain why his documented background makes him a strong candidate today?`
 
 ---
 
@@ -1323,7 +1325,7 @@ Immediately before emission, silently verify:
 10. Last non-whitespace character is `]`.
 11. JSON parses successfully.
 12. No internal reasoning or intermediate calculations appear.
-13. The upstream eligibility determination represented by `"isConfirmedRemote": true`—including Remote/WFH, work-jurisdiction, and travel eligibility—was not reevaluated, rescored, or second-guessed.
+13. The upstream eligibility determination represented by `"isConfirmedRemote": true`—including Remote/WFH, New York, and travel eligibility—was not reevaluated, rescored, or second-guessed.
 14. `remote support` or similar professional-function evidence was not discarded merely because remote-work eligibility moved upstream.
 
 If a Critical Gate failed, additionally verify:
@@ -1373,7 +1375,7 @@ If instructions conflict, obey in this order:
 
 1. valid JSON-only output;
 2. never expose internal reasoning;
-3. respect the pipeline boundary: the complete upstream eligibility determination represented by `"isConfirmedRemote": true`—including Remote/WFH, work-jurisdiction, and travel eligibility—was already decided upstream and must not be reevaluated;
+3. respect the pipeline boundary: the complete upstream eligibility determination represented by `"isConfirmedRemote": true`—including Remote/WFH, New York, and travel eligibility—was already decided upstream and must not be reevaluated;
 4. immediate termination on the first failed in-prompt Critical Gate;
 5. accurate Critical Gate evaluation;
 6. evidence integrity;
@@ -1412,7 +1414,7 @@ Thank you!
 
 This profile is a normalized summary of recurring qualitative evidence from documented professional testimonials.
 
-It exists to preserve useful evidence of the candidate’s demonstrated professional behaviors without repeatedly supplying or analyzing the underlying testimonial corpus.
+It exists to preserve useful evidence of Alex's demonstrated professional behaviors without repeatedly supplying or analyzing the underlying testimonial corpus.
 
 Treat the statements below as supported qualitative evidence.
 
@@ -1421,7 +1423,7 @@ Do not infer details beyond what the profile states.
 
 ### RESPONSIVENESS & TIMELINESS
 
-the candidate is repeatedly described as:
+Alex is repeatedly described as:
 
 - highly responsive;
 - prompt in addressing support needs;
@@ -1434,7 +1436,7 @@ Users consistently report feeling that their technical concerns receive prompt a
 
 ### TROUBLESHOOTING & PROBLEM OWNERSHIP
 
-the candidate is repeatedly described as:
+Alex is repeatedly described as:
 
 - a strong problem solver;
 - persistent when troubleshooting;
@@ -1447,7 +1449,7 @@ His support behavior demonstrates persistence, practical troubleshooting judgmen
 
 ### COMMUNICATION
 
-the candidate consistently demonstrates:
+Alex consistently demonstrates:
 
 - clear communication;
 - proactive status updates;
@@ -1460,7 +1462,7 @@ Users report feeling informed and supported rather than left uncertain about tec
 
 ### FOLLOW-THROUGH
 
-the candidate demonstrates strong follow-through by:
+Alex demonstrates strong follow-through by:
 
 - checking that solutions remain effective;
 - confirming that users have what they need after an intervention;
@@ -1472,7 +1474,7 @@ His service behavior reflects responsibility for outcomes rather than merely com
 
 ### CUSTOMER / USER SERVICE
 
-the candidate is repeatedly described as:
+Alex is repeatedly described as:
 
 - courteous;
 - respectful;
@@ -1484,12 +1486,12 @@ the candidate is repeatedly described as:
 
 He combines technical support with a strong customer-service orientation.
 
-Users consistently describe positive service experiences and express high levels of appreciation for their assistance.
+Users consistently describe positive service experiences and express high levels of appreciation for his assistance.
 
 
 ### USER-CENTERED SUPPORT
 
-the candidate demonstrates sensitivity to the operational needs of the people they support.
+Alex demonstrates sensitivity to the operational needs of the people he supports.
 
 Supported behaviors include:
 
@@ -1504,23 +1506,23 @@ His approach is service-oriented rather than purely technology-oriented.
 
 ### OPERATIONAL CONTINUITY
 
-the candidate demonstrates a strong focus on maintaining user and business continuity during technical problems.
+Alex demonstrates a strong focus on maintaining user and business continuity during technical problems.
 
-Documented qualitative evidence supports that they:
+Documented qualitative evidence supports that he:
 
 - works to minimize disruption;
 - prioritizes restoration of productive working conditions;
 - supports users through equipment or endpoint-related problems;
 - considers the practical operational consequences of technical failures.
 
-In healthcare-support contexts, users specifically valued their contribution to maintaining workflows that affected employee and patient experience.
+In healthcare-support contexts, users specifically valued his contribution to maintaining workflows that affected employee and patient experience.
 
 This profile does not independently establish proficiency with any specific healthcare or technical platform.
 
 
 ### TEAMWORK & COLLABORATION
 
-the candidate is repeatedly characterized as:
+Alex is repeatedly characterized as:
 
 - a strong team player;
 - supportive of colleagues;
@@ -1533,7 +1535,7 @@ His interpersonal style supports effective collaboration with both technical and
 
 ### PROFESSIONALISM
 
-the candidate consistently demonstrates:
+Alex consistently demonstrates:
 
 - respectful professional conduct;
 - reliability;
@@ -1542,19 +1544,19 @@ the candidate consistently demonstrates:
 - accountability;
 - calm user interaction.
 
-Users describe them as someone they trust and value working with.
+Users describe him as someone they trust and value working with.
 
 
 ### SUPPORT EFFECTIVENESS
 
-Recurring qualitative evidence indicates that the candidate’s technical-support work is perceived as highly effective.
+Recurring qualitative evidence indicates that Alex's technical-support work is perceived as highly effective.
 
 Users repeatedly report:
 
 - successful issue resolution;
 - useful troubleshooting;
 - meaningful operational assistance;
-- confidence in their support;
+- confidence in his support;
 - positive impact on their ability to work.
 
 This evidence supports qualitative conclusions about support effectiveness.
@@ -1564,7 +1566,7 @@ It MUST NOT be used to claim professional proficiency with a specific technology
 
 ### REMOTE-SUPPORT BEHAVIOR
 
-Documented qualitative evidence supports the candidate’s ability to provide patient, effective assistance when support is delivered remotely.
+Documented qualitative evidence supports Alex's ability to provide patient, effective assistance when support is delivered remotely.
 
 This may support conclusions involving:
 
@@ -1578,7 +1580,7 @@ It does not independently establish professional use of a specific remote-suppor
 
 ### INTERVIEW-RELEVANT QUALITATIVE STRENGTHS
 
-When relevant to the JD, the candidate has strong evidence supporting their ability to credibly discuss:
+When relevant to the JD, Alex has strong evidence supporting his ability to credibly discuss:
 
 - customer-service philosophy;
 - issue ownership;

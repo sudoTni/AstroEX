@@ -1,19 +1,12 @@
-# One target job title per line. Blank lines and lines starting with '#' are ignored.
-# EXAMPLE LIST - replace every entry with the roles YOU are targeting.
-# Run `astroom acquire-jobs --search-terms-file profile/search_terms.txt` to see
-# how many listings each term returns before committing to a full pipeline run.
-Security Engineer
-Security Operations Engineer
-Endpoint Security Engineer
-Security Analyst
-Vulnerability Management Engineer
-SIEM Engineer
-Security Platform Engineer
-Detection Engineer
-Incident Response Engineer
-Security Infrastructure Engineer
-Threat Hunter
-IT Support Engineer
-End User Computing Engineer
-Systems Support Engineer
-Infrastructure Support Engineer
+Senior Software Engineer
+Lead Software Engineer
+Staff Software Engineer
+Full Stack Engineer
+Backend Engineer
+Cloud Systems Engineer
+Distributed Systems Engineer
+TypeScript Engineer
+Node.js Engineer
+Platform Engineer
+Infrastructure Engineer
+Software Architect

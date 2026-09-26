@@ -1,14 +1,11 @@
-# Substring match against the job title (case-insensitive). Any listing whose
-# title contains one of these strings is dropped in the processData stage.
-#
-# Use this for roles you never want, regardless of employer.
-#
-# EXAMPLE LIST - replace or extend. Keep entries specific: a broad value like
-# "red" will also remove legitimate titles such as "Required" or "Shared".
-intern
-internship
+application
+compliance
+devops
+devsecops
 director
-head of
-vice president
-chief
-commission
+grc
+manager
+penetration test
+pentest
+product
+red
