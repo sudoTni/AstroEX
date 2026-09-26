@@ -1,30 +1,130 @@
-# Local, privacy-sensitive runtime state. These paths are intentionally never
-# part of source control; use example configuration and fixtures instead.
-data/
-logs/
-materials/
-materials-deployed/
-profile/
-personal_data/
-debug_scrape_output.json
-*.sqlite*
-*.bak
+# ---------------------------------------------------------------------------
+# Rust / Cargo build output
+#
+# `target/` is NOT ignored wholesale on purpose: this repository distributes a
+# prebuilt release binary at target/release/astroom, and it is found by
+# ./astro_launcher.bash, the README quick start, and CI's smoke test.
+# Everything else Cargo produces is ignored explicitly.
+# ---------------------------------------------------------------------------
+/target/debug/
+/target/tmp/
+/target/.rustc_info.json
+/target/CACHEDIR.TAG
+/target/astro_strike
 
-# Tool output & dependencies
-node_modules/
-dist/
-coverage/
-*.tsbuildinfo
-*.tgz
-*.log
+/target/release/build/
+/target/release/deps/
+/target/release/incremental/
+/target/release/examples/
+/target/release/.fingerprint/
+/target/release/*.d
+/target/release/*.rlib
+/target/release/.cargo-*
+
+# Intentionally NOT ignored:
+#   /target/release/astroom   <- the distributed release binary
+
+/target/x86_64-pc-windows-gnu/debug/
+/target/x86_64-pc-windows-gnu/tmp/
+/target/x86_64-pc-windows-gnu/CACHEDIR.TAG
+/target/x86_64-pc-windows-gnu/release/build/
+/target/x86_64-pc-windows-gnu/release/deps/
+/target/x86_64-pc-windows-gnu/release/incremental/
+/target/x86_64-pc-windows-gnu/release/examples/
+/target/x86_64-pc-windows-gnu/release/.fingerprint/
+/target/x86_64-pc-windows-gnu/release/*.d
+/target/x86_64-pc-windows-gnu/release/*.rlib
+/target/x86_64-pc-windows-gnu/release/.cargo-*
+
+# Intentionally NOT ignored:
+#   /target/x86_64-pc-windows-gnu/release/astroom.exe <- the distributed Windows release binary
+
+# ---------------------------------------------------------------------------
+# Secrets and local configuration
+# ---------------------------------------------------------------------------
 .env
 .env.*
 !.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+id_rsa*
+id_ed25519*
 
-# OS & Editor files
-.DS_Store
-Thumbs.db
-.idea/
+# ---------------------------------------------------------------------------
+# Runtime state (user-specific, regenerated on every run)
+# ---------------------------------------------------------------------------
+/data/*
+/logs/*
+/materials/
+/materials-deployed/
+/jobDB.json
+*.sqlite
+*.sqlite-*
+*.sqlite.bak
+*.sqlite.bak.*
+!/tests/fixtures/*.sqlite
+!/tests/fixtures/*.sqlite-*
+*cool_off_suppressions*.json
+# `astroom --record-logo-gif` writes this into the current working directory.
+# Anchored to the repo root so the copies under screenshots/ and logo_dev/ stay
+# tracked.
+/AstroOM-logo.gif
+
+# The user's live, personal candidate profile. Ship the template instead:
+#   cp -r profile.example profile
+/profile/
+/profile.*/
+!/profile.example/
+
+# ---------------------------------------------------------------------------
+# Test / debug artifacts
+# ---------------------------------------------------------------------------
+/tmp/
+*.tmp
+*.dSYM/
+*.profraw
+*.profdata
+/perf.data*
+/flamegraph.svg
+/coverage/
+/lcov.info
+/tarpaulin-report.html
+/target/criterion/
+/criterion/
+
+# ---------------------------------------------------------------------------
+# Editor / IDE
+# ---------------------------------------------------------------------------
 .vscode/
+.idea/
 *.swp
+*.swo
 *~
+*.sublime-project
+*.sublime-workspace
+.project
+.settings/
+.classpath
+
+# ---------------------------------------------------------------------------
+# OS metadata
+# ---------------------------------------------------------------------------
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+Desktop.ini
+.directory
+
+# ---------------------------------------------------------------------------
+# Logs and crash dumps
+# ---------------------------------------------------------------------------
+*.log
+/core
+core.*
+*.dmp

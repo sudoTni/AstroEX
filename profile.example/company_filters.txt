@@ -1,45 +1,13 @@
-apex
-best job tool
-braintrust
-centene
-consultnet
-cyberr
-executiveplacements
-fllr consulting
-gainwell
-govcio
-jobgether
-jobot
-jobright
-jobs via dice
-legal.io
-lensa
-microsoft
-motion recruitment
-myticas
-npaworldwide
-piper companies
-piper companies
-recruit
-robert half
-robert half
-sotalent
-staff
-talent
-talentify.io
-techmatrix
-teksystems
-the judge group
-transcend it solutions
-trident consulting
-veritis group
-vivid resourcing
-zachary piper
-cyber focus ai
-hackajob
-cybercoders
-james search group
-sundayy
-remotehunter
-swooped
-zenius corporation
+# Substring match against the job's company name (case-insensitive). Any listing
+# whose company contains one of these strings is dropped in the processData stage.
+#
+# Use this to exclude agencies and job boards rather than real employers, so you
+# do not silently discard roles you actually want.
+#
+# EXAMPLE LIST - replace or extend. Keep entries specific: overly broad values
+# such as "inc" or "tech" will remove legitimate postings.
+example staffing agency
+example job board
+example talent solutions
+example consulting group
+example recruiters

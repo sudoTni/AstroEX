@@ -1,0 +1,256 @@
+{
+  "cases": [
+    {
+      "html": "\n\t\t<div class=\"show-more-less-html__markup\">\n\t\t\t<h2>About the Role</h2>\n\t\t\t<p>We are seeking a <strong>senior security engineer</strong>.</p>\n\t\t\t<ul><li>Kubernetes</li><li>Terraform</li></ul>\n\t\t</div>\n\t\t<code id=\"applyUrl\"><!--https://careers.acme.com/apply?url=https%3A%2F%2Fboards.greenhouse.io%2Facme%2Fjobs%2F987654--></code>\n\t\t<ul>\n\t\t\t<li class=\"description__job-criteria-item\">\n\t\t\t\t<h3 class=\"description__job-criteria-subheader\">Seniority level</h3>\n\t\t\t\t<span class=\"description__job-criteria-text\">Mid-Senior level</span>\n\t\t\t</li>\n\t\t\t<li class=\"description__job-criteria-item\">\n\t\t\t\t<h3 class=\"description__job-criteria-subheader\">Employment type</h3>\n\t\t\t\t<span class=\"description__job-criteria-text\">Full-time</span>\n\t\t\t</li>\n\t\t\t<li class=\"description__job-criteria-item\">\n\t\t\t\t<h3 class=\"description__job-criteria-subheader\">Job function</h3>\n\t\t\t\t<span class=\"description__job-criteria-text\">Engineering</span>\n\t\t\t</li>\n\t\t\t<li class=\"description__job-criteria-item\">\n\t\t\t\t<h3 class=\"description__job-criteria-subheader\">Industries</h3>\n\t\t\t\t<span class=\"description__job-criteria-text\">Software Development</span>\n\t\t\t</li>\n\t\t</ul>\n\t\t<img class=\"artdeco-entity-image\" data-ghost-url=\"https://media.licdn.com/co.png\" />\n\t",
+      "format": "markdown",
+      "output": {
+        "description": "## About the Role\n\nWe are seeking a **senior security engineer**.\n\n*   Kubernetes\n*   Terraform",
+        "descriptionHtml": "\n\t\t\t<h2>About the Role</h2>\n\t\t\t<p>We are seeking a <strong>senior security engineer</strong>.</p>\n\t\t\t<ul><li>Kubernetes</li><li>Terraform</li></ul>\n\t\t",
+        "directUrl": "https://boards.greenhouse.io/acme/jobs/987654",
+        "seniorityLevel": "Mid-Senior level",
+        "employmentType": "Full-time",
+        "jobFunction": "Engineering",
+        "industries": "Software Development",
+        "img": "https://media.licdn.com/co.png"
+      }
+    },
+    {
+      "html": "\n\t\t<div class=\"show-more-less-html__markup\">\n\t\t\t<h2>About the Role</h2>\n\t\t\t<p>We are seeking a <strong>senior security engineer</strong>.</p>\n\t\t\t<ul><li>Kubernetes</li><li>Terraform</li></ul>\n\t\t</div>\n\t\t<code id=\"applyUrl\"><!--https://careers.acme.com/apply?url=https%3A%2F%2Fboards.greenhouse.io%2Facme%2Fjobs%2F987654--></code>\n\t\t<ul>\n\t\t\t<li class=\"description__job-criteria-item\">\n\t\t\t\t<h3 class=\"description__job-criteria-subheader\">Seniority level</h3>\n\t\t\t\t<span class=\"description__job-criteria-text\">Mid-Senior level</span>\n\t\t\t</li>\n\t\t\t<li class=\"description__job-criteria-item\">\n\t\t\t\t<h3 class=\"description__job-criteria-subheader\">Employment type</h3>\n\t\t\t\t<span class=\"description__job-criteria-text\">Full-time</span>\n\t\t\t</li>\n\t\t\t<li class=\"description__job-criteria-item\">\n\t\t\t\t<h3 class=\"description__job-criteria-subheader\">Job function</h3>\n\t\t\t\t<span class=\"description__job-criteria-text\">Engineering</span>\n\t\t\t</li>\n\t\t\t<li class=\"description__job-criteria-item\">\n\t\t\t\t<h3 class=\"description__job-criteria-subheader\">Industries</h3>\n\t\t\t\t<span class=\"description__job-criteria-text\">Software Development</span>\n\t\t\t</li>\n\t\t</ul>\n\t\t<img class=\"artdeco-entity-image\" data-ghost-url=\"https://media.licdn.com/co.png\" />\n\t",
+      "format": "plain",
+      "output": {
+        "description": "About the Role We are seeking a senior security engineer. KubernetesTerraform",
+        "descriptionHtml": "\n\t\t\t<h2>About the Role</h2>\n\t\t\t<p>We are seeking a <strong>senior security engineer</strong>.</p>\n\t\t\t<ul><li>Kubernetes</li><li>Terraform</li></ul>\n\t\t",
+        "directUrl": "https://boards.greenhouse.io/acme/jobs/987654",
+        "seniorityLevel": "Mid-Senior level",
+        "employmentType": "Full-time",
+        "jobFunction": "Engineering",
+        "industries": "Software Development",
+        "img": "https://media.licdn.com/co.png"
+      }
+    },
+    {
+      "html": "\n\t\t<div class=\"show-more-less-html__markup\">\n\t\t\t<h2>About the Role</h2>\n\t\t\t<p>We are seeking a <strong>senior security engineer</strong>.</p>\n\t\t\t<ul><li>Kubernetes</li><li>Terraform</li></ul>\n\t\t</div>\n\t\t<code id=\"applyUrl\"><!--https://careers.acme.com/apply?url=https%3A%2F%2Fboards.greenhouse.io%2Facme%2Fjobs%2F987654--></code>\n\t\t<ul>\n\t\t\t<li class=\"description__job-criteria-item\">\n\t\t\t\t<h3 class=\"description__job-criteria-subheader\">Seniority level</h3>\n\t\t\t\t<span class=\"description__job-criteria-text\">Mid-Senior level</span>\n\t\t\t</li>\n\t\t\t<li class=\"description__job-criteria-item\">\n\t\t\t\t<h3 class=\"description__job-criteria-subheader\">Employment type</h3>\n\t\t\t\t<span class=\"description__job-criteria-text\">Full-time</span>\n\t\t\t</li>\n\t\t\t<li class=\"description__job-criteria-item\">\n\t\t\t\t<h3 class=\"description__job-criteria-subheader\">Job function</h3>\n\t\t\t\t<span class=\"description__job-criteria-text\">Engineering</span>\n\t\t\t</li>\n\t\t\t<li class=\"description__job-criteria-item\">\n\t\t\t\t<h3 class=\"description__job-criteria-subheader\">Industries</h3>\n\t\t\t\t<span class=\"description__job-criteria-text\">Software Development</span>\n\t\t\t</li>\n\t\t</ul>\n\t\t<img class=\"artdeco-entity-image\" data-ghost-url=\"https://media.licdn.com/co.png\" />\n\t",
+      "format": "html",
+      "output": {
+        "description": "\n\t\t\t<h2>About the Role</h2>\n\t\t\t<p>We are seeking a <strong>senior security engineer</strong>.</p>\n\t\t\t<ul><li>Kubernetes</li><li>Terraform</li></ul>\n\t\t",
+        "descriptionHtml": "\n\t\t\t<h2>About the Role</h2>\n\t\t\t<p>We are seeking a <strong>senior security engineer</strong>.</p>\n\t\t\t<ul><li>Kubernetes</li><li>Terraform</li></ul>\n\t\t",
+        "directUrl": "https://boards.greenhouse.io/acme/jobs/987654",
+        "seniorityLevel": "Mid-Senior level",
+        "employmentType": "Full-time",
+        "jobFunction": "Engineering",
+        "industries": "Software Development",
+        "img": "https://media.licdn.com/co.png"
+      }
+    },
+    {
+      "html": "<div class=\"show-more-less-html__markup\"><script>bad()</script><style>.a{}</style><p>Real <b>description</b></p></div>",
+      "format": "markdown",
+      "output": {
+        "description": "Real **description**",
+        "descriptionHtml": "<p>Real <b>description</b></p>",
+        "directUrl": null,
+        "seniorityLevel": null,
+        "employmentType": null,
+        "jobFunction": null,
+        "industries": null,
+        "img": null
+      }
+    },
+    {
+      "html": "<div class=\"show-more-less-html__markup\"><script>bad()</script><style>.a{}</style><p>Real <b>description</b></p></div>",
+      "format": "plain",
+      "output": {
+        "description": "Real description",
+        "descriptionHtml": "<p>Real <b>description</b></p>",
+        "directUrl": null,
+        "seniorityLevel": null,
+        "employmentType": null,
+        "jobFunction": null,
+        "industries": null,
+        "img": null
+      }
+    },
+    {
+      "html": "<div class=\"show-more-less-html__markup\"><script>bad()</script><style>.a{}</style><p>Real <b>description</b></p></div>",
+      "format": "html",
+      "output": {
+        "description": "<p>Real <b>description</b></p>",
+        "descriptionHtml": "<p>Real <b>description</b></p>",
+        "directUrl": null,
+        "seniorityLevel": null,
+        "employmentType": null,
+        "jobFunction": null,
+        "industries": null,
+        "img": null
+      }
+    },
+    {
+      "html": "<div class=\"show-more-less-html__markup\"><p>Only description, no criteria</p></div>",
+      "format": "markdown",
+      "output": {
+        "description": "Only description, no criteria",
+        "descriptionHtml": "<p>Only description, no criteria</p>",
+        "directUrl": null,
+        "seniorityLevel": null,
+        "employmentType": null,
+        "jobFunction": null,
+        "industries": null,
+        "img": null
+      }
+    },
+    {
+      "html": "<div class=\"show-more-less-html__markup\"><p>Only description, no criteria</p></div>",
+      "format": "plain",
+      "output": {
+        "description": "Only description, no criteria",
+        "descriptionHtml": "<p>Only description, no criteria</p>",
+        "directUrl": null,
+        "seniorityLevel": null,
+        "employmentType": null,
+        "jobFunction": null,
+        "industries": null,
+        "img": null
+      }
+    },
+    {
+      "html": "<div class=\"show-more-less-html__markup\"><p>Only description, no criteria</p></div>",
+      "format": "html",
+      "output": {
+        "description": "<p>Only description, no criteria</p>",
+        "descriptionHtml": "<p>Only description, no criteria</p>",
+        "directUrl": null,
+        "seniorityLevel": null,
+        "employmentType": null,
+        "jobFunction": null,
+        "industries": null,
+        "img": null
+      }
+    },
+    {
+      "html": "<p>No markup div at all</p>",
+      "format": "markdown",
+      "output": {
+        "description": null,
+        "descriptionHtml": null,
+        "directUrl": null,
+        "seniorityLevel": null,
+        "employmentType": null,
+        "jobFunction": null,
+        "industries": null,
+        "img": null
+      }
+    },
+    {
+      "html": "<p>No markup div at all</p>",
+      "format": "plain",
+      "output": {
+        "description": null,
+        "descriptionHtml": null,
+        "directUrl": null,
+        "seniorityLevel": null,
+        "employmentType": null,
+        "jobFunction": null,
+        "industries": null,
+        "img": null
+      }
+    },
+    {
+      "html": "<p>No markup div at all</p>",
+      "format": "html",
+      "output": {
+        "description": null,
+        "descriptionHtml": null,
+        "directUrl": null,
+        "seniorityLevel": null,
+        "employmentType": null,
+        "jobFunction": null,
+        "industries": null,
+        "img": null
+      }
+    },
+    {
+      "html": "<code id=\"applyUrl\">https://careers.acme.com/apply?url=https%zz-bad</code>",
+      "format": "markdown",
+      "output": {
+        "description": null,
+        "descriptionHtml": null,
+        "directUrl": "https%zz-bad",
+        "seniorityLevel": null,
+        "employmentType": null,
+        "jobFunction": null,
+        "industries": null,
+        "img": null
+      }
+    },
+    {
+      "html": "<code id=\"applyUrl\">https://careers.acme.com/apply?url=https%zz-bad</code>",
+      "format": "plain",
+      "output": {
+        "description": null,
+        "descriptionHtml": null,
+        "directUrl": "https%zz-bad",
+        "seniorityLevel": null,
+        "employmentType": null,
+        "jobFunction": null,
+        "industries": null,
+        "img": null
+      }
+    },
+    {
+      "html": "<code id=\"applyUrl\">https://careers.acme.com/apply?url=https%zz-bad</code>",
+      "format": "html",
+      "output": {
+        "description": null,
+        "descriptionHtml": null,
+        "directUrl": "https%zz-bad",
+        "seniorityLevel": null,
+        "employmentType": null,
+        "jobFunction": null,
+        "industries": null,
+        "img": null
+      }
+    },
+    {
+      "html": "<code id=\"applyUrl\"><!--https://x/apply?url=https%3A%2F%2Flever.co%2Fco%2F123--></code><ul><li class=\"description__job-criteria-item\"><h3 class=\"description__job-criteria-subheader\">Industries</h3><span class=\"description__job-criteria-text\">IT Services and IT Consulting, Staffing and Recruiting</span></li></ul>",
+      "format": "markdown",
+      "output": {
+        "description": null,
+        "descriptionHtml": null,
+        "directUrl": "https://lever.co/co/123",
+        "seniorityLevel": null,
+        "employmentType": null,
+        "jobFunction": null,
+        "industries": "IT Services and IT Consulting, Staffing and Recruiting",
+        "img": null
+      }
+    },
+    {
+      "html": "<code id=\"applyUrl\"><!--https://x/apply?url=https%3A%2F%2Flever.co%2Fco%2F123--></code><ul><li class=\"description__job-criteria-item\"><h3 class=\"description__job-criteria-subheader\">Industries</h3><span class=\"description__job-criteria-text\">IT Services and IT Consulting, Staffing and Recruiting</span></li></ul>",
+      "format": "plain",
+      "output": {
+        "description": null,
+        "descriptionHtml": null,
+        "directUrl": "https://lever.co/co/123",
+        "seniorityLevel": null,
+        "employmentType": null,
+        "jobFunction": null,
+        "industries": "IT Services and IT Consulting, Staffing and Recruiting",
+        "img": null
+      }
+    },
+    {
+      "html": "<code id=\"applyUrl\"><!--https://x/apply?url=https%3A%2F%2Flever.co%2Fco%2F123--></code><ul><li class=\"description__job-criteria-item\"><h3 class=\"description__job-criteria-subheader\">Industries</h3><span class=\"description__job-criteria-text\">IT Services and IT Consulting, Staffing and Recruiting</span></li></ul>",
+      "format": "html",
+      "output": {
+        "description": null,
+        "descriptionHtml": null,
+        "directUrl": "https://lever.co/co/123",
+        "seniorityLevel": null,
+        "employmentType": null,
+        "jobFunction": null,
+        "industries": "IT Services and IT Consulting, Staffing and Recruiting",
+        "img": null
+      }
+    }
+  ]
+}

@@ -1,0 +1,286 @@
+[
+  {
+    "input": "{\"a\": 1}",
+    "ok": true,
+    "parsed": {
+      "a": 1
+    }
+  },
+  {
+    "input": "{\"a\": 1, \"b\": [1, 2, 3]}",
+    "ok": true,
+    "parsed": {
+      "a": 1,
+      "b": [
+        1,
+        2,
+        3
+      ]
+    }
+  },
+  {
+    "input": "```json\n{\"a\": [1, 2, 3]}\n```",
+    "ok": true,
+    "parsed": {
+      "a": [
+        1,
+        2,
+        3
+      ]
+    }
+  },
+  {
+    "input": "```\n{\"a\": 1}\n```",
+    "ok": true,
+    "parsed": {
+      "a": 1
+    }
+  },
+  {
+    "input": "Here's the JSON: {\"a\": 1}",
+    "ok": true,
+    "parsed": {
+      "a": 1
+    }
+  },
+  {
+    "input": "JSON: {\"a\": 1}",
+    "ok": true,
+    "parsed": {
+      "a": 1
+    }
+  },
+  {
+    "input": "{\"a\": 1} JSON",
+    "ok": true,
+    "parsed": {
+      "a": 1
+    }
+  },
+  {
+    "input": "  {\"a\": 1}  ",
+    "ok": true,
+    "parsed": {
+      "a": 1
+    }
+  },
+  {
+    "input": "{\"a\": 1, \"b\": [1, 2,],}",
+    "ok": true,
+    "parsed": {
+      "a": 1,
+      "b": [
+        1,
+        2
+      ]
+    }
+  },
+  {
+    "input": "{\"a\": 1, \"b\": 2,}",
+    "ok": true,
+    "parsed": {
+      "a": 1,
+      "b": 2
+    }
+  },
+  {
+    "input": "[1, 2, 3,]",
+    "ok": true,
+    "parsed": [
+      1,
+      2,
+      3
+    ]
+  },
+  {
+    "input": "{\"a\": {\"b\": 1",
+    "ok": true,
+    "parsed": {
+      "a": {
+        "b": 1
+      }
+    }
+  },
+  {
+    "input": "[1, 2, {\"x\": 3",
+    "ok": true,
+    "parsed": [
+      1,
+      2,
+      {
+        "x": 3
+      }
+    ]
+  },
+  {
+    "input": "{\"s\": \"a{b\" }",
+    "ok": true,
+    "parsed": {
+      "s": "a{b"
+    }
+  },
+  {
+    "input": "{\"s\": \"a}b\" }",
+    "ok": true,
+    "parsed": {
+      "s": "a}b"
+    }
+  },
+  {
+    "input": "Here is some preamble text [1, 2, 3] and trailing text",
+    "ok": true,
+    "parsed": [
+      1,
+      2,
+      3
+    ]
+  },
+  {
+    "input": "noise before {\"a\": 1} middle noise {\"b\": {\"c\": 2}} after",
+    "ok": true,
+    "parsed": [
+      {
+        "a": 1
+      },
+      {
+        "b": {
+          "c": 2
+        }
+      }
+    ]
+  },
+  {
+    "input": "no json here",
+    "ok": true,
+    "parsed": []
+  },
+  {
+    "input": "plain text, nothing parseable",
+    "ok": true,
+    "parsed": []
+  },
+  {
+    "input": "[{\"a\": 1}, {\"b\": 2}",
+    "ok": true,
+    "parsed": [
+      {
+        "a": 1
+      },
+      {
+        "b": 2
+      }
+    ]
+  },
+  {
+    "input": "```json\n{\"name\": \"x\", \"items\": [{\"k\": 1}, {\"k\": 2}],}\n```",
+    "ok": true,
+    "parsed": {
+      "name": "x",
+      "items": [
+        {
+          "k": 1
+        },
+        {
+          "k": 2
+        }
+      ]
+    }
+  },
+  {
+    "input": "{\"nested\": {\"deep\": {\"deeper\": [1, 2, 3",
+    "ok": true,
+    "parsed": []
+  },
+  {
+    "input": "{\"escaped\": \"line\\nbreak\"}",
+    "ok": true,
+    "parsed": {
+      "escaped": "line\nbreak"
+    }
+  },
+  {
+    "input": "{\"path\": \"C:\\\\temp\\\\file\"}",
+    "ok": true,
+    "parsed": {
+      "path": "C:\\temp\\file"
+    }
+  },
+  {
+    "input": "{\"quote\": \"say \\\"hi\\\"\"}",
+    "ok": true,
+    "parsed": {
+      "quote": "say \"hi\""
+    }
+  },
+  {
+    "input": "[]",
+    "ok": true,
+    "parsed": []
+  },
+  {
+    "input": "{}",
+    "ok": true,
+    "parsed": {}
+  },
+  {
+    "input": "{\"trailing\": \"text\"} trailing junk",
+    "ok": true,
+    "parsed": [
+      {
+        "trailing": "text"
+      }
+    ]
+  },
+  {
+    "input": "prefix {\"a\": [1, 2, 3]} suffix",
+    "ok": true,
+    "parsed": [
+      1,
+      2,
+      3
+    ]
+  },
+  {
+    "input": "{\"unicode\": \"caf\\u00e9\"}",
+    "ok": true,
+    "parsed": {
+      "unicode": "café"
+    }
+  },
+  {
+    "input": "{\"ok\": true, \"nil\": null}",
+    "ok": true,
+    "parsed": {
+      "ok": true,
+      "nil": null
+    }
+  },
+  {
+    "input": "text before [{\"a\": 1}] text after",
+    "ok": true,
+    "parsed": [
+      {
+        "a": 1
+      }
+    ]
+  },
+  {
+    "input": "{\"a\": \"unterminated",
+    "ok": true,
+    "parsed": []
+  },
+  {
+    "input": "{\"a\": 1}}",
+    "ok": true,
+    "parsed": [
+      {
+        "a": 1
+      }
+    ]
+  },
+  {
+    "input": "{{}}",
+    "ok": true,
+    "parsed": []
+  }
+]

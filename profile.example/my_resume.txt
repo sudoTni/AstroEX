@@ -1,47 +1,61 @@
-Alex Morgan
-Senior Full-Stack & Cloud Systems Engineer
-San Francisco, CA • (555) 019-2834 • alex.morgan.tech@example.com
-linkedin.com/in/example-alexmorgan • github.com/example-alexmorgan
+Your Name
+Security / SecOps Engineer • Enterprise IT & Remote Support
+Your City, ST • +1-555-0100 • you@example.com
+linkedin.com/in/your-handle • github.com/your-handle
+Optional: clearance or eligibility status you want the prompts to respect
 
 Professional Summary
 
-Senior Full-Stack & Cloud Systems Engineer with 10+ years of enterprise engineering experience designing, scaling, and operating resilient cloud-native architectures, distributed services, and developer tooling. Proven background engineering high-throughput microservices in TypeScript, Node.js, and Python across AWS and GCP environments. Experienced in modern observability, container orchestration with Kubernetes and Docker, CI/CD pipeline automation, and production database modeling with PostgreSQL and Redis. Adept at translating complex product requirements into robust, maintainable systems while mentoring engineering teams and championing clean code, test automation, and architectural best practices.
+Replace this paragraph with 3-4 sentences describing your own background. The
+jobCloth, jobJudge, remoteEval, and makeMaterials stages all read this file, so
+be concrete about years of experience, the environments you have worked in, and
+the kinds of problems you have solved. This is an EXAMPLE - every sentence here
+is illustrative and must be rewritten to match your real experience, because
+the generated application materials must only contain claims you can defend in
+an interview.
 
 Core Skills
 
-* Languages & Core Tech: TypeScript • JavaScript • Node.js • Python • Go • SQL • HTML5 • CSS3 • Shell Scripting
-* Cloud & Infrastructure: AWS (ECS, Lambda, S3, RDS, DynamoDB, SQS, SNS) • Google Cloud Platform (GCP) • Docker • Kubernetes • Terraform • Linux Systems Administration
-* Architecture & Data: Distributed Systems • Microservices • RESTful APIs • GraphQL • PostgreSQL • Redis • MongoDB • Apache Kafka • Event-Driven Architecture • System Design
-* Engineering Practices: CI/CD (GitHub Actions) • Test-Driven Development (TDD) • Jest • Vitest • Observability (Prometheus, Grafana, Datadog) • Performance Profiling • Security Best Practices
-* Generative AI & Automation: LLM Integration • OpenAI API • Prompt Engineering • Vector Databases • Autonomous Workflows
+* Security Operations: Splunk • Splunk SPL • EDR/XDR • Security Event Triage • Threat Hunting • Threat Intelligence • IOC Investigation • Endpoint Telemetry Analysis • Incident Response • Detection Tuning • Log Analysis • Network Security Monitoring
+* Vulnerability & Endpoint Security: Vulnerability Management • Qualys • Nexpose • CVE / CVSS Analysis • Vulnerability Prioritization • Vulnerability Remediation • Patch Management • Endpoint Hardening • EDR Policy Tuning
+* Systems & Identity: Windows • macOS • Linux • Windows Server • Active Directory • Group Policy (GPO) • Endpoint Management (SCCM) • VMware • IAM • PAM • DNS • DHCP • TCP/IP
+* Remote Support & ITSM: Remote Technical Support • Tier 2 / Tier 3 Support • Endpoint Troubleshooting • Root-Cause Analysis • IT Service Management (ITSM) • Incident Management • SLA-Driven Support • Asset Management • Technical Documentation
+* Cloud & Automation: Python • PowerShell • Git / GitHub • AWS • Azure • GCP
+* Generative AI & LLMs: Large Language Models (LLMs) • LLM Application & Pipeline Engineering • Prompt Engineering • AI-Assisted Development
 
 Professional Experience
 
-Staff Software Engineer • Apex Cloud Systems • San Francisco, CA (Hybrid) • Jan 2023 – Present
-* Architected and delivered an event-driven data ingestion platform processing 50M+ daily events using Node.js, TypeScript, Apache Kafka, and AWS ECS.
-* Reduced median API response latency by 42% through structured query optimization, Redis tier caching, and connection pooling across high-volume endpoints.
-* Spearheaded migration from legacy monolithic backend to containerized microservices orchestrated on Kubernetes, improving deployment frequency from bi-weekly to daily.
-* Led a cross-functional squad of 7 engineers, facilitating sprint planning, system design reviews, and pair programming to uphold rigorous code quality standards.
+List your roles most-recent-first using the same shape the prompts expect:
+`Job Title • Employment Type • Employer • Location • Start – End`, followed by
+bullet points that quantify scope and outcome. The example below shows the
+expected level of detail; replace every line with your own history.
 
-Senior Backend Engineer • Beacon Data Labs • Remote • Mar 2020 – Dec 2022
-* Designed and maintained scalable RESTful and GraphQL APIs in TypeScript, Fastify, and PostgreSQL serving 120,000+ active enterprise users.
-* Implemented end-to-end telemetry and monitoring dashboards using Prometheus and Grafana, reducing Mean Time to Detection (MTTD) of production incidents by 60%.
-* Automated continuous integration and deployment pipelines with GitHub Actions, reducing release cycle lead times by 75%.
-* Authored core data validation and rate-limiting middleware to guard against upstream DDoS attacks and ensure service reliability under load spikes.
+Security Analyst • Full-time • Example Security Corp • Remote / Example City, ST • Jul 2021 – Oct 2023
+* Co-led migration of 40,000+ regulated endpoints from legacy antivirus to an EDR/XDR platform, covering deployment, tuning, adoption, and security modernization.
+* Used a SIEM, EDR tooling, Python, and PowerShell to investigate security events, analyze endpoint behavior, support threat hunting, and assist incident remediation.
+* Converted high-volume technical signals into actionable findings supporting incident response, vulnerability remediation, and compliance efforts.
+* Supported SLA-driven remediation of critical vulnerabilities through structured tracking, prioritization, documentation, and cross-functional coordination.
 
-Full-Stack Software Engineer • Horizon Digital Solutions • Austin, TX • Aug 2016 – Feb 2020
-* Developed and shipped client-facing web applications using React, TypeScript, Node.js, and Express, achieving 99.95% application uptime.
-* Modeled relational database schemas in PostgreSQL and optimized complex SQL queries to eliminate application-level bottlenecks.
-* Integrated third-party payment gateways, authentication providers (OAuth2/OIDC), and enterprise webhook event dispatchers.
-* Collaborated directly with product managers and UX designers to iterate quickly on customer feedback, improving onboarding conversion by 28%.
+System Support Specialist • Full-time • Example Health Systems • Example City, ST • Apr 2020 – Jul 2021
+* Deployed compliant infrastructure for 200+ staff, maintaining high availability and uninterrupted operations.
+* Reduced technical response times by 35% through asset-management improvements and ticketing workflow automation.
+* Supported clinical and business applications, endpoint systems, and remote-support requests, earning 95% satisfaction scores.
 
-Software Engineer • Zenith Media Technologies • Austin, TX • Jun 2014 – Jul 2016
-* Built internal administrative tooling, reporting dashboards, and ETL pipelines using Python, Flask, and PostgreSQL.
-* Automated manual operational workflows, eliminating approximately 20 hours per week of manual data reconciliation for operations teams.
-* Participated in an on-call rotation, resolving critical production anomalies, analyzing log traces, and documenting comprehensive post-mortem reports.
+Senior Systems Administrator • Full-time • Example Industrial Group • Example City, ST • Apr 2012 – Apr 2020
+* Strengthened endpoint resilience through automated patch deployment, configuration-management administration, proactive monitoring, and infrastructure troubleshooting.
+* Supported Windows Server, Active Directory, VMware, endpoint systems, identity operations, and continuity-focused enterprise support.
+* Administered enterprise physical-security infrastructure, including access-control systems supporting 200+ employees.
 
-Education & Certifications
+Technical Support Specialist • Full-time • Example Retail Company • Example City, ST • Oct 2010 – Apr 2012
+* Resolved complex technical issues daily while educating customers on security, privacy, encryption, device protection, and account-safety best practices.
+* Recognized for advanced troubleshooting, clear communication, and high-quality customer support.
 
-* AWS Certified Solutions Architect – Associate • Amazon Web Services
-* Certified Kubernetes Application Developer (CKAD) • Cloud Native Computing Foundation
-* Bachelor of Science in Computer Science • University of Texas at Austin • Graduated May 2014
+Certifications & Education
+
+Replace with your own certifications, degrees, and institutions. The screening
+prompts treat certifications as hard qualifications, so only list credentials
+you actually hold.
+* Example Certification (Vendor) • Mon YYYY
+* Example Certification (Vendor) • Mon YYYY
+* Bachelor of Science in Example Field • Mon YYYY
+   * Example University • Example City, ST

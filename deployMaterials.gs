@@ -1,5 +1,8 @@
 /**
  * Job-material deployment automation (OpenRouter Edition).
+ * Part of AstroOM. Copyright (c) 2025-2026 AstroOM Contributors. MIT licensed.
+ * No credential or account identifier is hard-coded here: configure every key
+ * in SCRIPT_PROPERTIES via Project Settings -> Script Properties.
  *
  * Revised pipeline:
  * 1. Read structured markdown material files from SOURCE_FOLDER_ID.
@@ -41,9 +44,9 @@ const LOG_LEVELS = Object.freeze({
 const CURRENT_LOG_LEVEL = LOG_LEVELS.INFO; // Default to INFO in production (options: DEBUG, INFO, WARN, ERROR)
 const ENABLE_SPREADSHEET_LOGGING = true;
 const ENABLE_DOC_LOGGING = true;
-const DEFAULT_DOC_LOG_FOLDER_ID = 'YOUR_GOOGLE_DRIVE_FOLDER_ID'; // Replace with your Google Drive Folder ID
+const DEFAULT_DOC_LOG_FOLDER_ID = ''; // No default: set the DOC_LOG_FOLDER_ID Script Property instead.
 const DOC_LOG_FOLDER_ID = DEFAULT_DOC_LOG_FOLDER_ID; // Backward-compatibility alias
-const DOC_LOG_FILE_NAME_PREFIX = 'AstroEX-RunLog';
+const DOC_LOG_FILE_NAME_PREFIX = 'AstroOM-RunLog';
 const DOC_LOG_FILE_TS_FORMAT = 'yyyyMMdd-HHmmss-SSS';
 const ARCHIVE_UNRESOLVED_FILES = true; // Move unresolvable files to processed folder to prevent infinite retry loops
 
@@ -298,7 +301,7 @@ function flushDocLogs(folderIdOverride) {
 
     if (!DOC_LOG_RUN_MARKER_WRITTEN) {
       const firstP = body.getParagraphs()[0];
-      const titleText = `AstroEX Run Log: ${DOC_LOG_CURRENT_RUN_TIMESTAMP}`;
+      const titleText = `AstroOM Run Log: ${DOC_LOG_CURRENT_RUN_TIMESTAMP}`;
       if (firstP && firstP.getText() === '') {
         firstP.editAsText().setText(titleText);
         if (firstP.setHeading) firstP.setHeading(DocumentApp.ParagraphHeading.HEADING1);
@@ -1108,15 +1111,13 @@ function askOpenRouterOnce(prompt, config, overrides) {
     top_p: typeof overrides.top_p === 'number' ? overrides.top_p : 0.9
   };
 
-  // Attribution headers mirror ASTROEX_LLM_HEADERS in src/constants.ts. Apps Script
-  // has no module system, so the fixed values are repeated here.
   const options = {
     method: 'post',
     contentType: 'application/json',
     headers: { 
       'Authorization': `Bearer ${config.orApiKey}`,
-      'HTTP-Referer': 'https://github.com/sudoTni/AstroEX', 
-      'X-Title': 'AstroEX'
+      'HTTP-Referer': 'https://google.com', 
+      'X-Title': 'Apps Script Job Material Pipeline'
     },
     payload: JSON.stringify(payload),
     muteHttpExceptions: true
@@ -2165,7 +2166,7 @@ function getRearJobTitlePortion(metadata) {
  */
 function getLinkedInDocBaseName(metadata, config) {
   const rearPortion = getRearJobTitlePortion(metadata).replace(/\.pdf$/i, '');
-  const applicantName = (config && config.applicantName) ? config.applicantName : 'Alex Morgan';
+  const applicantName = (config && config.applicantName) ? config.applicantName : 'Your Name';
   const applicantPrefix = applicantName.replace(/[^\w]/g, '_');
   return `${applicantPrefix}_LinkedIn_${rearPortion}`;
 }
@@ -2225,7 +2226,7 @@ function generateLinkedInDoc(targetFolder, metadata, jobUrl, config) {
  * Computes a standardized folder name for an application's rendered package materials.
  */
 function getRenderPackageFolderName(metadata, config) {
-  const applicantName = (config && config.applicantName) ? config.applicantName : 'Alex Morgan';
+  const applicantName = (config && config.applicantName) ? config.applicantName : 'Your Name';
   const applicantPrefix = applicantName.replace(/[^\w]/g, '_');
 
   const manualResumeName = getMetadataValue(metadata, 'Resume Filename') || getMetadataValue(metadata, 'Materials Filename');

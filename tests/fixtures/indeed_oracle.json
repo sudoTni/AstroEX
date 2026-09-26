@@ -1,0 +1,200 @@
+{
+  "filters": [
+    {
+      "options": {},
+      "value": "",
+      "error": null
+    },
+    {
+      "options": {
+        "hoursOld": 24
+      },
+      "value": "filters: { date: { field: \"dateOnIndeed\", start: \"24h\" } }",
+      "error": null
+    },
+    {
+      "options": {
+        "hoursOld": 0
+      },
+      "value": null,
+      "error": "hoursOld must be greater than zero when supplied"
+    },
+    {
+      "options": {
+        "hoursOld": 48,
+        "remoteOnly": true,
+        "easyApply": true
+      },
+      "value": "filters: { date: { field: \"dateOnIndeed\", start: \"48h\" } }",
+      "error": null
+    },
+    {
+      "options": {
+        "remoteOnly": true,
+        "easyApply": true
+      },
+      "value": null,
+      "error": "Indeed remote-only and easy-apply filters cannot be combined without hoursOld"
+    },
+    {
+      "options": {
+        "remoteOnly": true
+      },
+      "value": "filters: { composite: { filters: [{ keyword: { field: \"attributes\", keys: [\"DSQF7\"]} }] } }",
+      "error": null
+    },
+    {
+      "options": {
+        "remoteOnly": true,
+        "jobType": "fulltime"
+      },
+      "value": "filters: { composite: { filters: [{ keyword: { field: \"attributes\", keys: [\"CF3CP\", \"DSQF7\"]} }] } }",
+      "error": null
+    },
+    {
+      "options": {
+        "remoteOnly": true,
+        "jobType": "unknown"
+      },
+      "value": "filters: { composite: { filters: [{ keyword: { field: \"attributes\", keys: [\"DSQF7\"]} }] } }",
+      "error": null
+    },
+    {
+      "options": {
+        "easyApply": true
+      },
+      "value": "filters: { keyword: { field: \"indeedApplyScope\", keys: [\"DESKTOP\"] } }",
+      "error": null
+    },
+    {
+      "options": {
+        "isRemote": true
+      },
+      "value": "filters: { composite: { filters: [{ keyword: { field: \"attributes\", keys: [\"DSQF7\"]} }] } }",
+      "error": null
+    },
+    {
+      "options": {
+        "isRemote": false
+      },
+      "value": "",
+      "error": null
+    },
+    {
+      "options": {
+        "jobType": "contract"
+      },
+      "value": "filters: { composite: { filters: [{ keyword: { field: \"attributes\", keys: [\"NJXCK\"]} }] } }",
+      "error": null
+    },
+    {
+      "options": {
+        "jobType": "internship",
+        "isRemote": true
+      },
+      "value": "filters: { composite: { filters: [{ keyword: { field: \"attributes\", keys: [\"VDTG7\", \"DSQF7\"]} }] } }",
+      "error": null
+    },
+    {
+      "options": {
+        "jobType": "parttime"
+      },
+      "value": "filters: { composite: { filters: [{ keyword: { field: \"attributes\", keys: [\"75GKK\"]} }] } }",
+      "error": null
+    },
+    {
+      "options": {
+        "jobType": "unknown"
+      },
+      "value": "",
+      "error": null
+    }
+  ],
+  "remoteJobs": [
+    {
+      "job": {
+        "attributes": [
+          {
+            "key": "DSQF7",
+            "label": "Remote"
+          }
+        ]
+      },
+      "output": true
+    },
+    {
+      "job": {
+        "title": "Remote Engineer"
+      },
+      "output": true
+    },
+    {
+      "job": {
+        "location": {
+          "formatted": {
+            "long": "Work from home"
+          }
+        }
+      },
+      "output": true
+    },
+    {
+      "job": {
+        "attributes": [
+          {
+            "key": "X",
+            "label": "remote friendly"
+          }
+        ]
+      },
+      "output": true
+    },
+    {
+      "job": {
+        "title": "Engineer",
+        "location": {
+          "formatted": {
+            "long": "New York"
+          }
+        }
+      },
+      "output": false
+    },
+    {
+      "job": {},
+      "output": false
+    },
+    {
+      "job": {
+        "attributes": [
+          {
+            "key": "WFH",
+            "label": "Work From Home"
+          }
+        ]
+      },
+      "output": true
+    },
+    {
+      "job": {
+        "title": "work-from-home role"
+      },
+      "output": true
+    },
+    {
+      "job": {
+        "attributes": []
+      },
+      "output": false
+    },
+    {
+      "job": {
+        "title": "Telework",
+        "location": {
+          "formatted": {}
+        }
+      },
+      "output": false
+    }
+  ]
+}

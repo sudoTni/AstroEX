@@ -12,9 +12,9 @@ Please analyze `targJD` only to determine whether the job passes all requirement
 
 1. an explicitly remote employee work arrangement;
 2. no mandatory office/on-site/in-person attendance inconsistent with a remote role, subject only to the expressly permitted exceptions below; and
-3. eligibility to perform the role while residing in New York State.
+3. eligibility to perform the role while residing in the candidate's work jurisdiction.
 
-This prompt is the sole authority for Remote/WFH and New York geographic eligibility. Its result is used as a first-stage pre-filter before any broader candidate/job compatibility assessment.
+This prompt is the sole authority for Remote/WFH and work-jurisdiction eligibility. Its result is used as a first-stage pre-filter before any broader candidate/job compatibility assessment.
 
 Use only `targJD`.
 
@@ -78,7 +78,7 @@ If genuinely unavailable, use:
 
 Do not otherwise deconstruct the JD beyond what is necessary for the remote/WFH determination.
 
-### Step 1 — Remote/WFH and New York eligibility
+### Step 1 — Remote/WFH and work-jurisdiction eligibility
 
 Determine `isConfirmedRemote` using the rules below.
 
@@ -271,44 +271,44 @@ Examples:
 * `Remote; report to headquarters four times per year as part of the normal work schedule` → FAIL.
 * `Remote; 15% client travel` → FAIL.
 
-### Condition 3 — New York geographic eligibility
+### Condition 3 — work-jurisdiction eligibility
 
-Nothing in the JD may prevent the employee from performing the remote role while residing in New York State.
+Nothing in the JD may prevent the employee from performing the remote role while residing in the candidate's work jurisdiction.
 
 PASS when:
 
-* the role is `US Remote` and no stated restriction excludes New York;
-* the role is remote with no geographic restriction preventing New York;
-* the JD lists permitted states/regions and New York is affirmatively included.
+* the role is `US Remote` and no stated restriction excludes the candidate's work jurisdiction;
+* the role is remote with no geographic restriction preventing the candidate's work jurisdiction;
+* the JD lists permitted states/regions and the candidate's work jurisdiction is affirmatively included.
 
 FAIL when:
 
-* the remote geography expressly excludes New York;
+* the remote geography expressly excludes the candidate's work jurisdiction;
 * residency must be in another state/region;
-* the role requires residence in a location incompatible with New York;
-* the permitted-state list omits New York;
+* the role requires residence in a location incompatible with the candidate's work jurisdiction;
+* the permitted-state list omits the candidate's work jurisdiction;
 * work-location eligibility for the explicitly remote role is materially ambiguous.
 
 Examples:
 
-* `Location: Remote` with no contradictory attendance or NY exclusion → PASS.
-* `US Remote` with no NY exclusion → PASS.
+* `Location: Remote` with no contradictory attendance or work-jurisdiction exclusion → PASS.
+* `US Remote` with no work-jurisdiction exclusion → PASS.
 * `Remote — Must reside in Texas` → FAIL.
 * remote role requiring California residence → FAIL.
-* `Remote in the following states:` with New York absent → FAIL.
-* `Remote from approved states` where the JD does not identify whether New York is approved → FAIL.
+* `Remote in the following states:` with the candidate's work jurisdiction absent → FAIL.
+* `Remote from approved states` where the JD does not identify whether the candidate's work jurisdiction is approved → FAIL.
 
 Preserve uncertainty. Never assume an unstated geographic permission.
 
-A permitted one-time orientation or qualifying travel requirement under Condition 2 does not itself establish or defeat New York residency eligibility.
+A permitted one-time orientation or qualifying travel requirement under Condition 2 does not itself establish or defeat work-jurisdiction residency eligibility.
 
 Evaluate residency/work-location restrictions separately from temporary travel requirements.
 
 For example:
 
-* `Remote anywhere in the US; one-time orientation in Texas` does not fail New York eligibility merely because orientation occurs in Texas.
-* `Remote; up to 10% nationwide customer travel` does not fail New York eligibility merely because travel may occur outside New York.
-* `Remote; must reside in Texas` → FAIL New York eligibility.
+* `Remote anywhere in the US; one-time orientation in Texas` does not fail work-jurisdiction eligibility merely because orientation occurs in Texas.
+* `Remote; up to 10% nationwide customer travel` does not fail work-jurisdiction eligibility merely because travel may occur outside the candidate's work jurisdiction.
+* `Remote; must reside in Texas` → FAIL work-jurisdiction eligibility.
 
 ---
 
@@ -320,14 +320,14 @@ It should briefly state the decisive remote/work-location evidence.
 
 Examples of appropriate substance:
 
-* explicit remote classification with no NY restriction;
+* explicit remote classification with no work-jurisdiction restriction;
 * explicit remote classification with only a one-time orientation requirement and no recurring office requirement;
-* explicit remote classification with travel limited to 10% or less and no NY restriction;
+* explicit remote classification with travel limited to 10% or less and no work-jurisdiction restriction;
 * no explicit job-remote statement;
 * hybrid or recurring mandatory office requirement;
 * required travel exceeds 10%;
 * required travel is materially unclear and cannot be confirmed as 10% or less;
-* remote role restricted to a location excluding New York;
+* remote role restricted to a location excluding the candidate's work jurisdiction;
 * materially ambiguous remote-state eligibility.
 
 Do not mention:
@@ -388,7 +388,7 @@ Immediately before emission, silently verify:
    * no disqualifying mandatory worksite/in-person arrangement exists;
    * any recurring required business travel is confirmed to be 10% or less;
    * any one-time orientation/onboarding requirement was correctly treated as permissible rather than recurring office attendance; and
-   * New York eligibility is not excluded or materially ambiguous.
+   * work-jurisdiction eligibility is not excluded or materially ambiguous.
 6. Lack of explicit remote classification produced `false`.
 7. Remote-support duties alone did not establish remote work.
 8. Geographic ambiguity was not resolved favorably.

@@ -4,30 +4,134 @@ on:
   push:
   pull_request:
 
-permissions:
-  contents: read
+env:
+  CARGO_TERM_COLOR: always
 
 jobs:
-  verify:
+  hygiene:
+    name: Secret and PII scan
     runs-on: ubuntu-latest
-    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+
+      - name: Detect committed secrets
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # AstroOM must never ship one contributor's personal data. The pattern
+      # covers the identity of the maintainer this project was developed around.
+      #
+      # Deliberately NOT scanned:
+      #   screenshots/  - logo and terminal captures (immutable assets)
+      #   logo_dev/     - logo animation prototype (immutable assets)
+      #
+      # The GitHub org in `repository = ...` and the OpenRouter HTTP-Referer
+      # header are project identity, not personal data, and are excluded from
+      # the pattern below. Update those four locations together if the project
+      # ever moves to a different organization.
+      - name: Detect personal data
+        run: |
+          set -euo pipefail
+          if git grep -nIiE \
+            'michael|martini|watervliet|518-334' \
+            -- . ':!screenshots' ':!logo_dev'; then
+            echo "::error::Personal data found. AstroOM must be distributed with"
+            echo "::error::no contributor PII outside screenshots/ and logo_dev/."
+            exit 1
+          fi
+          echo "No personal data found."
+
+      # Personalization residue that a plain name search misses: gendered
+      # pronouns, and hard-coded personal geography/qualifications in prompts.
+      - name: Detect personalization residue in prompts
+        run: |
+          set -euo pipefail
+          failed=0
+          if rg -nI '\b(he|she|his|her|him|hers|himself|herself)\b' prompts/; then
+            echo "::error::Gendered pronouns found in prompts/. Prompts must use"
+            echo "::error::'the candidate' and 'they/their'."
+            failed=1
+          fi
+          if rg -nI 'new york|\bNY\b|watervliet|bachelor of arts' prompts/; then
+            echo "::error::Hard-coded personal geography or qualification found in"
+            echo "::error::prompts/. Abstract it so it is user-configurable."
+            failed=1
+          fi
+          [ "$failed" -eq 0 ] && echo "No personalization residue in prompts."
+          exit "$failed"
+
+      # The published artifacts must not leak the build machine's layout. Rust
+      # embeds source paths in panic-location strings unless they are remapped.
+      - name: Verify release binaries embed no build paths
+        run: |
+          set -euo pipefail
+          for BIN in target/release/astroom target/x86_64-pc-windows-gnu/release/astroom.exe; do
+            if [ -f "$BIN" ]; then
+              for pattern in '/home/' '/Users/' 'C:\\Users' "$HOME"; do
+                if [ -n "$pattern" ] && [ "$pattern" != '/' ] \
+                   && strings -a "$BIN" | grep -qF -- "$pattern"; then
+                  echo "::error::$BIN embeds '$pattern'. Build with"
+                  echo "::error::  RUSTFLAGS=\"--remap-path-prefix=\$PWD=/astroom --remap-path-prefix=\$HOME=/build\""
+                  exit 1
+                fi
+              done
+            fi
+          done
+          echo "Release binaries embed no build paths."
+
+      - name: Verify release binary checksums
+        run: |
+          set -euo pipefail
+          sha256sum -c astroom-*-x86_64-unknown-linux-gnu.sha256
+          sha256sum -c astroom-*-x86_64-pc-windows-gnu.sha256
+
+  build:
+    name: Build, lint, and test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install MinGW GCC for Windows target
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-mingw-w64-x86-64
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
         with:
-          node-version: 22.x
-          cache: npm
-      - run: npm ci --ignore-scripts
-      - run: npm run typecheck
-      - run: npm test
-      - run: npm run audit
-      - run: |
-          npm pack --dry-run --json > pack.json
-          node -e 'const raw=require("./pack.json"); const entry=Array.isArray(raw)?raw[0]:(raw.astroex??raw); const privatePath=/^(data|logs|materials|materials-deployed|profile|personal_data|test)\//; if ((entry.files||[]).some(({path}) => privatePath.test(path))) process.exit(1)'
-      - run: |
-          npm pack --pack-destination "$RUNNER_TEMP"
-          mkdir "$RUNNER_TEMP/astroex-package-smoke"
-          cd "$RUNNER_TEMP/astroex-package-smoke"
-          npm init --yes
-          npm install "$RUNNER_TEMP"/astroex-*.tgz --ignore-scripts
-          ./node_modules/.bin/astroex --help
+          targets: x86_64-pc-windows-gnu
+          components: rustfmt, clippy
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Format check
+        run: cargo fmt --check
+
+      - name: Clippy (Linux)
+        run: cargo clippy --all-targets --all-features -- -D warnings
+
+      - name: Clippy (Windows)
+        run: cargo clippy --target x86_64-pc-windows-gnu --all-targets -- -D warnings
+
+      - name: Test (Linux)
+        run: cargo test
+
+      - name: Test harnesses compilation (Windows)
+        run: cargo test --target x86_64-pc-windows-gnu --no-run
+
+      - name: Release build (Linux)
+        run: cargo build --release
+
+      - name: Release build (Windows)
+        run: cargo build --target x86_64-pc-windows-gnu --release
+
+      - name: Smoke test
+        run: ./target/release/astroom --help
+
+      - name: Candidate profile template is valid
+        run: |
+          cp -r profile.example profile
+          ./target/release/astroom --no-banner --json \
+            --profile-dir ./profile preflight
