@@ -2,10 +2,20 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE.md)
 [![Node.js Version](https://img.shields.io/badge/node-%3E%3D22.13.0-brightgreen)](https://nodejs.org/)
+[![platform Win/Mac/Linux](https://img.shields.io/badge/platform-Win/Mac/Linux-4692f7?labelColor=555555)](#supported-platforms)<br>
+[![Google Antigravity](https://img.shields.io/badge/Google-Antigravity-4285F4)](https://antigravity.google/)
+[![OpenAI Codex](https://img.shields.io/badge/OpenAI-Codex-000000?labelColor=555555)](https://openai.com/codex/)
+[![Anomaly OpenCode](https://img.shields.io/badge/Anomaly-OpenCode-C6C4C4?labelColor=555555)](https://opencode.ai/)
+[![OpenRouter](https://img.shields.io/badge/OpenRouter-141210?style=flat-square&logo=openrouter&logoColor=white)](https://openrouter.ai)
 
 > **AstroEX** is an autonomous, multi-phase job acquisition and tailored application materials generation engine. It combines lightweight, headless job search querying with multi-provider LLM grounding to systematically evaluate opportunities, match candidate qualifications, and produce tailored application packages.
 
 <p align = "center"><img width="800" height="510" alt="astroex_terminal" src="https://github.com/user-attachments/assets/743135f7-f6f3-485d-989d-d8bab097330a" /></p>
+
+---
+
+> [!NOTE]
+> **[AstroEX](https://github.com/sudoTni/AstroEX/) ↔ [AstroOM](https://github.com/sudoTni/AstroOM):** Both projects are fully functional, feature-equivalent, and ready for your job search. Going forward, **[AstroOM](https://github.com/sudoTni/AstroOM)** is the recommended version and may receive future updates.
 
 ---
 
@@ -62,6 +72,9 @@ flowchart TD
 ---
 
 ## Quick Start Guide
+
+> [!NOTE]
+> The AOM contributors highly recommend the use of a codex / AI coding assistant for rapidly porting to your platform and configuring the software with your application materials!
 
 ### 1. Prerequisites
 - **Node.js**: `>= 22.13.0`
