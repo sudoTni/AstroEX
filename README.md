@@ -74,7 +74,7 @@ flowchart TD
 ## Quick Start Guide
 
 > [!NOTE]
-> The AOM contributors highly recommend the use of a codex / AI coding assistant for rapidly porting to your platform and configuring the software with your application materials!
+> The AOM contributors highly recommend the use of a codex / AI coding assistant for rapidly configuring the software with your application materials!
 
 ### 1. Prerequisites
 - **Node.js**: `>= 22.13.0`
