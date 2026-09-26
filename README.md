@@ -14,6 +14,11 @@
 
 ---
 
+> [!NOTE]
+> **[AstroEX](https://github.com/sudoTni/AstroEX/) ↔ [AstroOM](https://github.com/sudoTni/AstroOM):** Both projects are fully functional, feature-equivalent, and ready for your job search. Going forward, **[AstroOM](https://github.com/sudoTni/AstroOM)** is the recommended version and may receive future updates.
+
+---
+
 ## Legal & Compliance Disclaimer
 
 > [!WARNING]
