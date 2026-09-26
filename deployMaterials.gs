@@ -1108,13 +1108,15 @@ function askOpenRouterOnce(prompt, config, overrides) {
     top_p: typeof overrides.top_p === 'number' ? overrides.top_p : 0.9
   };
 
+  // Attribution headers mirror ASTROEX_LLM_HEADERS in src/constants.ts. Apps Script
+  // has no module system, so the fixed values are repeated here.
   const options = {
     method: 'post',
     contentType: 'application/json',
     headers: { 
       'Authorization': `Bearer ${config.orApiKey}`,
-      'HTTP-Referer': 'https://google.com', 
-      'X-Title': 'Apps Script Job Material Pipeline'
+      'HTTP-Referer': 'https://github.com/sudoTni/AstroEX', 
+      'X-Title': 'AstroEX'
     },
     payload: JSON.stringify(payload),
     muteHttpExceptions: true

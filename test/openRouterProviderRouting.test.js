@@ -201,17 +201,25 @@ test("provider routing parser trims entries, preserves order, and omits empty in
 	assert.equal(parseOpenRouterProviderRouting("   "), undefined);
 	assert.deepEqual(parseOpenRouterProviderRouting("anthropic"), {
 		only: ["anthropic"],
+		order: ["anthropic"],
+		allow_fallbacks: false,
 	});
 	assert.deepEqual(
 		parseOpenRouterProviderRouting(
 			" anthropic, amazon-bedrock,,google-vertex ",
 		),
-		{ only: ["anthropic", "amazon-bedrock", "google-vertex"] },
+		{
+			only: ["anthropic", "amazon-bedrock", "google-vertex"],
+			order: ["anthropic", "amazon-bedrock", "google-vertex"],
+			allow_fallbacks: false,
+		},
 	);
 	assert.deepEqual(
 		parseOpenRouterProviderRouting("Custom-Provider,custom-two"),
 		{
 			only: ["Custom-Provider", "custom-two"],
+			order: ["Custom-Provider", "custom-two"],
+			allow_fallbacks: false,
 		},
 	);
 });
@@ -225,21 +233,50 @@ test("pipeline config keeps stage provider routes independent and rejects empty 
 
 	const configured = buildPipelineConfig({
 		providerRouting: {
-			jobCloth: { only: ["anthropic"] },
-			remoteEval: { only: ["openai"] },
-			jobJudge: { only: ["google-vertex"] },
-			makeMaterials: { only: ["amazon-bedrock", "anthropic"] },
+			jobCloth: {
+				only: ["anthropic"],
+				order: ["anthropic"],
+				allow_fallbacks: false,
+			},
+			remoteEval: {
+				only: ["openai"],
+				order: ["openai"],
+				allow_fallbacks: false,
+			},
+			jobJudge: {
+				only: ["google-vertex"],
+				order: ["google-vertex"],
+				allow_fallbacks: false,
+			},
+			makeMaterials: {
+				only: ["amazon-bedrock", "anthropic"],
+				order: ["amazon-bedrock", "anthropic"],
+				allow_fallbacks: false,
+			},
 		},
 	});
 	assert.deepEqual(configured.providerRouting, {
-		jobCloth: { only: ["anthropic"] },
-		remoteEval: { only: ["openai"] },
-		jobJudge: { only: ["google-vertex"] },
-		makeMaterials: { only: ["amazon-bedrock", "anthropic"] },
+		jobCloth: {
+			only: ["anthropic"],
+			order: ["anthropic"],
+			allow_fallbacks: false,
+		},
+		remoteEval: { only: ["openai"], order: ["openai"], allow_fallbacks: false },
+		jobJudge: {
+			only: ["google-vertex"],
+			order: ["google-vertex"],
+			allow_fallbacks: false,
+		},
+		makeMaterials: {
+			only: ["amazon-bedrock", "anthropic"],
+			order: ["amazon-bedrock", "anthropic"],
+			allow_fallbacks: false,
+		},
 	});
 	assert.throws(
 		() =>
 			buildPipelineConfig({
+				// Deliberately invalid: an empty slug list must stay rejected.
 				providerRouting: { jobCloth: { only: [] } },
 			}),
 		/too_small|at least 1|Array must contain/i,
@@ -248,7 +285,11 @@ test("pipeline config keeps stage provider routes independent and rejects empty 
 
 test("each pipeline provider option preserves the auto-provider sentinel as a sole route", () => {
 	const auto = parseOpenRouterProviderRouting("astro_auto_provider");
-	assert.deepEqual(auto, { only: ["astro_auto_provider"] });
+	assert.deepEqual(auto, {
+		only: ["astro_auto_provider"],
+		order: ["astro_auto_provider"],
+		allow_fallbacks: false,
+	});
 	const configured = buildPipelineConfig({
 		providerRouting: {
 			jobCloth: auto,
@@ -258,7 +299,11 @@ test("each pipeline provider option preserves the auto-provider sentinel as a so
 		},
 	});
 	for (const routing of Object.values(configured.providerRouting)) {
-		assert.deepEqual(routing, { only: ["astro_auto_provider"] });
+		assert.deepEqual(routing, {
+			only: ["astro_auto_provider"],
+			order: ["astro_auto_provider"],
+			allow_fallbacks: false,
+		});
 	}
 });
 
@@ -288,12 +333,18 @@ test("provider routing reaches only its configured stage", async (t) => {
 	});
 
 	const captured = await runAllLlmStages(env, {
-		jobCloth: { only: ["anthropic", "amazon-bedrock"] },
+		jobCloth: {
+			only: ["anthropic", "amazon-bedrock"],
+			order: ["anthropic", "amazon-bedrock"],
+			allow_fallbacks: false,
+		},
 	});
 	assert.ok(
 		captured.jobCloth.every((request) => {
 			assert.deepEqual(request.providerRouting, {
 				only: ["anthropic", "amazon-bedrock"],
+				order: ["anthropic", "amazon-bedrock"],
+				allow_fallbacks: false,
 			});
 			return true;
 		}),
@@ -328,9 +379,21 @@ test("each stage preserves its own provider order in requests and logs", async (
 	});
 
 	const routes = {
-		jobCloth: { only: ["anthropic", "amazon-bedrock"] },
-		jobJudge: { only: ["google-vertex"] },
-		makeMaterials: { only: ["amazon-bedrock", "anthropic"] },
+		jobCloth: {
+			only: ["anthropic", "amazon-bedrock"],
+			order: ["anthropic", "amazon-bedrock"],
+			allow_fallbacks: false,
+		},
+		jobJudge: {
+			only: ["google-vertex"],
+			order: ["google-vertex"],
+			allow_fallbacks: false,
+		},
+		makeMaterials: {
+			only: ["amazon-bedrock", "anthropic"],
+			order: ["amazon-bedrock", "anthropic"],
+			allow_fallbacks: false,
+		},
 	};
 	const captured = await runAllLlmStages(env, routes);
 	for (const stage of Object.keys(routes)) {
@@ -365,12 +428,18 @@ test("global provider-ignore propagates to all stages", () => {
 	const config = buildPipelineConfig({
 		providerIgnore: ["deepinfra", "together"],
 		providerRouting: {
-			jobCloth: { only: ["anthropic"] },
+			jobCloth: {
+				only: ["anthropic"],
+				order: ["anthropic"],
+				allow_fallbacks: false,
+			},
 		},
 	});
 	assert.deepEqual(config.providerIgnore, ["deepinfra", "together"]);
 	assert.deepEqual(config.providerRouting.jobCloth, {
 		only: ["anthropic"],
+		order: ["anthropic"],
+		allow_fallbacks: false,
 		ignore: ["deepinfra", "together"],
 	});
 	assert.deepEqual(config.providerRouting.remoteEval, {
@@ -410,11 +479,15 @@ test("stage routing supports full coexistence of only, ignore, and quantizations
 	const routes = {
 		jobCloth: {
 			only: ["anthropic"],
+			order: ["anthropic"],
+			allow_fallbacks: false,
 			ignore: ["deepinfra"],
 			quantizations: ["int8", "fp8"],
 		},
 		jobJudge: {
 			only: ["google-vertex"],
+			order: ["google-vertex"],
+			allow_fallbacks: false,
 			ignore: ["deepinfra"],
 		},
 		makeMaterials: {
@@ -450,12 +523,16 @@ test("detailed LLM request formatting shows provider routing parameters when con
 		reasoning_effort: "high",
 		providerRouting: {
 			only: ["anthropic"],
+			order: ["anthropic"],
+			allow_fallbacks: false,
 			ignore: ["deepinfra", "together"],
 			quantizations: ["int8", "fp8"],
 		},
 	});
 	assert.ok(configured.includes("reasoning_effort=high"));
 	assert.ok(configured.includes("provider.only=anthropic"));
+	assert.ok(configured.includes("provider.order=anthropic"));
+	assert.ok(configured.includes("allow_fallbacks=false"));
 	assert.ok(configured.includes("provider.ignore=deepinfra,together"));
 	assert.ok(configured.includes("provider.quantizations=int8,fp8"));
 
@@ -464,6 +541,8 @@ test("detailed LLM request formatting shows provider routing parameters when con
 		model: "test-model",
 	});
 	assert.equal(omitted.includes("provider.only"), false);
+	assert.equal(omitted.includes("provider.order"), false);
+	assert.equal(omitted.includes("allow_fallbacks"), false);
 	assert.equal(omitted.includes("provider.ignore"), false);
 	assert.equal(omitted.includes("provider.quantizations"), false);
 });
@@ -509,7 +588,11 @@ test("run-pipeline logs provider-ignore and stage quantizations in console outpu
 		providerIgnore: ["deepinfra", "together"],
 		"jc-provider-quant": "int8,fp8",
 		providerRouting: {
-			jobCloth: { only: ["anthropic"] },
+			jobCloth: {
+				only: ["anthropic"],
+				order: ["anthropic"],
+				allow_fallbacks: false,
+			},
 		},
 	});
 

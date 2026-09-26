@@ -167,7 +167,11 @@ test("remoteEval removes prior remote assertions, filters failures, and persists
 		preset: "re_glm-5.3-flash",
 		sleep: 0,
 		reasoningLevel: "high",
-		providerRouting: { only: ["anthropic", "google-vertex"] },
+		providerRouting: {
+			only: ["anthropic", "google-vertex"],
+			order: ["anthropic", "google-vertex"],
+			allow_fallbacks: false,
+		},
 		useCheckpoints: false,
 	});
 
@@ -192,6 +196,8 @@ test("remoteEval removes prior remote assertions, filters failures, and persists
 		assert.equal(call.request.topP, 0.95);
 		assert.deepEqual(call.request.providerRouting, {
 			only: ["anthropic", "google-vertex"],
+			order: ["anthropic", "google-vertex"],
+			allow_fallbacks: false,
 		});
 	}
 	for (const call of calls) {
@@ -435,7 +441,11 @@ test("pipeline runs remoteEval only for remote-only and sends only confirmed job
 		).content;
 		if (options.payloadLogStage === "remoteEval") {
 			assert.equal(request.reasoning_effort, "pipeline-level");
-			assert.deepEqual(request.providerRouting, { only: ["anthropic"] });
+			assert.deepEqual(request.providerRouting, {
+				only: ["anthropic"],
+				order: ["anthropic"],
+				allow_fallbacks: false,
+			});
 			const passes = prompt.includes('"title": "Pipeline Pass"');
 			return {
 				content: [
@@ -479,7 +489,13 @@ test("pipeline runs remoteEval only for remote-only and sends only confirmed job
 		deployment: { enabled: false },
 		options: { clean: false, sleep: 0, useCheckpoints: false },
 		reasoningEffort: { remoteEval: "pipeline-level" },
-		providerRouting: { remoteEval: { only: ["anthropic"] } },
+		providerRouting: {
+			remoteEval: {
+				only: ["anthropic"],
+				order: ["anthropic"],
+				allow_fallbacks: false,
+			},
+		},
 	});
 	const { result, output: pipelineOutput } = await captureConsole(() =>
 		executePipeline(config, {

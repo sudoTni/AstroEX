@@ -1,6 +1,6 @@
 {
 	"name": "astroex",
-	"version": "0.13.0",
+	"version": "0.1326.0",
 	"description": "Multi-source job acquisition, filtering, evaluation, and tailored application materials generation pipeline",
 	"type": "commonjs",
 	"main": "dist/index.js",

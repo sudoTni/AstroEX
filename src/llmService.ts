@@ -1,6 +1,6 @@
 /**
  * AstroEX Centralized LLM Service
- * Version 0.13.0
+ * Version 0.1326.0
  *
  * This module provides a unified interface for all LLM API calls across the application.
  * It supports multiple providers (OpenAI, Gemini, Mistral, OpenRouter, POE) with consistent
@@ -26,6 +26,7 @@ import { OpenAI } from "openai";
 // import { Mistral } from "@mistralai/mistralai";
 import { z } from "zod";
 import { type CircuitBreaker, CircuitBreakerFactory } from "./circuitBreaker";
+import { ASTROEX_LLM_HEADERS } from "./constants";
 import { stripAnsi } from "./logging/fader";
 import {
 	type LlmPayloadLogStage,
@@ -198,6 +199,8 @@ const LLMRequestSchema = z.object({
 	providerRouting: z
 		.object({
 			only: z.array(z.string().trim().min(1)).min(1).optional(),
+			order: z.array(z.string().trim().min(1)).min(1).optional(),
+			allow_fallbacks: z.boolean().optional(),
 			ignore: z.array(z.string().trim().min(1)).min(1).optional(),
 			quantizations: z.array(z.string().trim().min(1)).min(1).optional(),
 		})
@@ -263,6 +266,8 @@ type ReasoningFields = {
 type OpenRouterProviderPayload = {
 	provider?: {
 		only?: string[];
+		order?: string[];
+		allow_fallbacks?: boolean;
 		ignore?: string[];
 		quantizations?: string[];
 	};
@@ -1504,6 +1509,21 @@ export class LLMService {
 	}
 
 	/**
+	 * Build an OpenAI-compatible client that identifies AstroEX to the provider.
+	 * `defaultHeaders` is merged with the SDK defaults, so authentication,
+	 * content-type and per-request headers are preserved.
+	 * @param provider Provider configuration
+	 * @returns Configured OpenAI-compatible client
+	 */
+	private createOpenAIClient(provider: AIProviderConfig): OpenAI {
+		return new OpenAI({
+			apiKey: provider.apiKey,
+			baseURL: provider.baseUrl,
+			defaultHeaders: { ...ASTROEX_LLM_HEADERS },
+		});
+	}
+
+	/**
 	 * Make OpenAI/OpenRouter API call with enhanced maxTokens enforcement
 	 * @param provider Provider configuration
 	 * @param request LLM request configuration
@@ -1514,10 +1534,7 @@ export class LLMService {
 		request: LLMRequest,
 		options: LLMCallOptions,
 	): Promise<LLMResponse> {
-		const client = new OpenAI({
-			apiKey: provider.apiKey,
-			baseURL: provider.baseUrl,
-		});
+		const client = this.createOpenAIClient(provider);
 
 		if (request.showReasoningTokens || request.showResponseStream) {
 			const maxRepetitionRetries = Math.max(
@@ -2048,10 +2065,7 @@ export class LLMService {
 		 */
 	): Promise<LLMResponse> {
 		// POE integration uses OpenAI-compatible API
-		const client = new OpenAI({
-			apiKey: provider.apiKey,
-			baseURL: provider.baseUrl,
-		});
+		const client = this.createOpenAIClient(provider);
 
 		if (request.showReasoningTokens || request.showResponseStream) {
 			const maxRepetitionRetries = Math.max(

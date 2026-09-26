@@ -40,11 +40,13 @@ function openAiResponse(content = '{"ok":true}') {
 
 async function startProvider(handler) {
 	const requests = [];
+	const requestHeaders = [];
 	const server = http.createServer(async (request, response) => {
 		const chunks = [];
 		for await (const chunk of request) chunks.push(chunk);
 		const body = JSON.parse(Buffer.concat(chunks).toString("utf8"));
 		requests.push(body);
+		requestHeaders.push({ ...request.headers });
 		await handler(body, response, requests.length);
 	});
 
@@ -57,6 +59,7 @@ async function startProvider(handler) {
 
 	return {
 		baseUrl: `http://127.0.0.1:${address.port}/v1`,
+		requestHeaders,
 		requests,
 		close: () => new Promise((resolve) => server.close(resolve)),
 	};
@@ -272,7 +275,11 @@ test("OpenRouter provider routing is serialized only when configured", async (t)
 	await service.call(
 		makeRequest("openrouter", {
 			responseSchema: undefined,
-			providerRouting: { only: ["anthropic"] },
+			providerRouting: {
+				only: ["anthropic"],
+				order: ["anthropic"],
+				allow_fallbacks: false,
+			},
 		}),
 		{ payloadLogStage: "jobCloth" },
 	);
@@ -281,6 +288,8 @@ test("OpenRouter provider routing is serialized only when configured", async (t)
 			responseSchema: undefined,
 			providerRouting: {
 				only: ["anthropic", "amazon-bedrock", "google-vertex"],
+				order: ["anthropic", "amazon-bedrock", "google-vertex"],
+				allow_fallbacks: false,
 			},
 		}),
 		{ payloadLogStage: "jobJudge" },
@@ -289,15 +298,35 @@ test("OpenRouter provider routing is serialized only when configured", async (t)
 		payloadLogStage: "makeMaterials",
 	});
 
-	assert.deepEqual(provider.requests[0].provider, { only: ["anthropic"] });
+	assert.deepEqual(provider.requests[0].provider, {
+		only: ["anthropic"],
+		order: ["anthropic"],
+		allow_fallbacks: false,
+	});
 	assert.deepEqual(provider.requests[1].provider, {
 		only: ["anthropic", "amazon-bedrock", "google-vertex"],
+		order: ["anthropic", "amazon-bedrock", "google-vertex"],
+		allow_fallbacks: false,
 	});
 	assert.equal("provider" in provider.requests[2], false);
 
 	for (const [stage, expected] of [
-		["jobCloth", { only: ["anthropic"] }],
-		["jobJudge", { only: ["anthropic", "amazon-bedrock", "google-vertex"] }],
+		[
+			"jobCloth",
+			{
+				only: ["anthropic"],
+				order: ["anthropic"],
+				allow_fallbacks: false,
+			},
+		],
+		[
+			"jobJudge",
+			{
+				only: ["anthropic", "amazon-bedrock", "google-vertex"],
+				order: ["anthropic", "amazon-bedrock", "google-vertex"],
+				allow_fallbacks: false,
+			},
+		],
 	]) {
 		const entries = await readPayloads(root, stage);
 		assert.equal(entries.length, 1);
@@ -318,7 +347,11 @@ test("OpenRouter routing is not sent to other OpenAI-compatible providers", asyn
 		await service.call(
 			makeRequest(providerName, {
 				responseSchema: undefined,
-				providerRouting: { only: ["anthropic"] },
+				providerRouting: {
+					only: ["anthropic"],
+					order: ["anthropic"],
+					allow_fallbacks: false,
+				},
 			}),
 		);
 	}
@@ -326,6 +359,59 @@ test("OpenRouter routing is not sent to other OpenAI-compatible providers", asyn
 	assert.equal(provider.requests.length, 3);
 	for (const body of provider.requests) {
 		assert.equal("provider" in body, false);
+	}
+});
+
+test("every OpenAI-compatible LLM request carries the AstroEX identification headers", async (t) => {
+	const provider = await startProvider((body, response) => {
+		if (!body.stream) {
+			sendJson(response, 200, openAiResponse("streamed success"));
+			return;
+		}
+		response.writeHead(200, {
+			"content-type": "text/event-stream",
+			"cache-control": "no-cache",
+			connection: "keep-alive",
+		});
+		const chunk = {
+			id: "gen-header-test",
+			object: "chat.completion.chunk",
+			created: Math.floor(Date.now() / 1000),
+			model: "test-model",
+			choices: [
+				{
+					index: 0,
+					delta: { role: "assistant", content: "streamed success" },
+					finish_reason: null,
+				},
+			],
+		};
+		response.write(`data: ${JSON.stringify(chunk)}\n\n`);
+		response.end("data: [DONE]\n\n");
+	});
+	t.after(() => provider.close());
+
+	for (const providerName of ["openai", "openrouter", "cerebras", "poe"]) {
+		const service = createService(providerName, provider.baseUrl);
+		await service.call(
+			makeRequest(providerName, { responseSchema: undefined }),
+		);
+		await service.call(
+			makeRequest(providerName, {
+				responseSchema: undefined,
+				showResponseStream: true,
+			}),
+		);
+	}
+
+	assert.equal(provider.requests.length, 8);
+	assert.equal(provider.requestHeaders.length, 8);
+	for (const headers of provider.requestHeaders) {
+		assert.equal(headers["http-referer"], "https://github.com/sudoTni/AstroEX");
+		assert.equal(headers["x-title"], "AstroEX");
+		// Pre-existing headers must survive the merge.
+		assert.equal(headers.authorization, "Bearer test-api-key");
+		assert.match(headers["content-type"], /^application\/json/);
 	}
 });
 
@@ -479,7 +565,11 @@ test("stream fallback logs both provider attempts with collision-resistant names
 	await service.call(
 		makeRequest("openrouter", {
 			showResponseStream: true,
-			providerRouting: { only: ["google-vertex", "anthropic"] },
+			providerRouting: {
+				only: ["google-vertex", "anthropic"],
+				order: ["google-vertex", "anthropic"],
+				allow_fallbacks: false,
+			},
 		}),
 		{ payloadLogStage: "jobJudge" },
 	);
@@ -503,7 +593,11 @@ test("stream fallback logs both provider attempts with collision-resistant names
 		entries.every(
 			(entry) =>
 				JSON.stringify(entry.payload.provider) ===
-				JSON.stringify({ only: ["google-vertex", "anthropic"] }),
+				JSON.stringify({
+					only: ["google-vertex", "anthropic"],
+					order: ["google-vertex", "anthropic"],
+					allow_fallbacks: false,
+				}),
 		),
 	);
 });

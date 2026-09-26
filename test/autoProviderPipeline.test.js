@@ -212,10 +212,26 @@ test("pipeline resolves each auto-provider stage immediately before its own LLM 
 			makeMaterials: "rop_g5.6-luna_or",
 		},
 		providerRouting: {
-			jobCloth: { only: ["astro_auto_provider"] },
-			remoteEval: { only: ["astro_auto_provider"] },
-			jobJudge: { only: ["astro_auto_provider"] },
-			makeMaterials: { only: ["astro_auto_provider"] },
+			jobCloth: {
+				only: ["astro_auto_provider"],
+				order: ["astro_auto_provider"],
+				allow_fallbacks: false,
+			},
+			remoteEval: {
+				only: ["astro_auto_provider"],
+				order: ["astro_auto_provider"],
+				allow_fallbacks: false,
+			},
+			jobJudge: {
+				only: ["astro_auto_provider"],
+				order: ["astro_auto_provider"],
+				allow_fallbacks: false,
+			},
+			makeMaterials: {
+				only: ["astro_auto_provider"],
+				order: ["astro_auto_provider"],
+				allow_fallbacks: false,
+			},
 		},
 	});
 	const { output } = await captureConsole(() =>
@@ -229,13 +245,23 @@ test("pipeline resolves each auto-provider stage immediately before its own LLM 
 	}
 	assert.deepEqual(stageRouting.get("jobCloth"), {
 		only: ["deepseek-provider"],
+		order: ["deepseek-provider"],
+		allow_fallbacks: false,
 	});
-	assert.deepEqual(stageRouting.get("remoteEval"), { only: ["glm-provider"] });
+	assert.deepEqual(stageRouting.get("remoteEval"), {
+		only: ["glm-provider"],
+		order: ["glm-provider"],
+		allow_fallbacks: false,
+	});
 	assert.deepEqual(stageRouting.get("jobJudge"), {
 		only: ["deepseek-provider"],
+		order: ["deepseek-provider"],
+		allow_fallbacks: false,
 	});
 	assert.deepEqual(stageRouting.get("makeMaterials"), {
 		only: ["openai-provider"],
+		order: ["openai-provider"],
+		allow_fallbacks: false,
 	});
 	assert.equal(events.filter((event) => event.kind === "selector").length, 4);
 	const expectedSelectors = [
@@ -302,7 +328,13 @@ test("explicit routes bypass selection while mixed sentinel routes fail before L
 		providers: { apiKey: "test-key" },
 		deployment: { enabled: false },
 		options: { clean: false, sleep: 0, useCheckpoints: false },
-		providerRouting: { jobCloth: { only: ["anthropic"] } },
+		providerRouting: {
+			jobCloth: {
+				only: ["anthropic"],
+				order: ["anthropic"],
+				allow_fallbacks: false,
+			},
+		},
 	});
 	await executePipeline(explicitConfig, {
 		resume: "jobCloth",
@@ -324,7 +356,11 @@ test("explicit routes bypass selection while mixed sentinel routes fail before L
 		deployment: { enabled: false },
 		options: { clean: false, sleep: 0, useCheckpoints: false },
 		providerRouting: {
-			jobCloth: { only: ["astro_auto_provider", "anthropic"] },
+			jobCloth: {
+				only: ["astro_auto_provider", "anthropic"],
+				order: ["astro_auto_provider", "anthropic"],
+				allow_fallbacks: false,
+			},
 		},
 	});
 	await assert.rejects(
@@ -387,7 +423,11 @@ test("pipeline passes stage quantization constraints to astro_auto_provider and 
 		providerIgnore: ["deepinfra"],
 		"jc-provider-quant": "int8",
 		providerRouting: {
-			jobCloth: { only: ["astro_auto_provider"] },
+			jobCloth: {
+				only: ["astro_auto_provider"],
+				order: ["astro_auto_provider"],
+				allow_fallbacks: false,
+			},
 		},
 	});
 
@@ -399,6 +439,8 @@ test("pipeline passes stage quantization constraints to astro_auto_provider and 
 	assert.ok(routes.length > 0);
 	assert.deepEqual(routes[0], {
 		only: ["int8-provider"],
+		order: ["int8-provider"],
+		allow_fallbacks: false,
 		ignore: ["deepinfra"],
 		quantizations: ["int8"],
 	});
@@ -522,7 +564,11 @@ test("pipeline respects --astro_auto_provider-top when selecting provider endpoi
 		options: { clean: false, sleep: 0, useCheckpoints: false },
 		"astro_auto_provider-top": 4,
 		providerRouting: {
-			jobCloth: { only: ["astro_auto_provider"] },
+			jobCloth: {
+				only: ["astro_auto_provider"],
+				order: ["astro_auto_provider"],
+				allow_fallbacks: false,
+			},
 		},
 	});
 

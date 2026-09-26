@@ -1,6 +1,6 @@
 /**
  * AstroEX Type Definitions
- * Version 0.13.0
+ * Version 0.1326.0
  *
  * This module defines all TypeScript interfaces and types used throughout the application.
  * These types ensure type safety and consistent data structures across all modules.
@@ -13,6 +13,8 @@ import type { LogLevel } from "./logging/types";
 
 export interface OpenRouterProviderRouting {
 	only?: string[];
+	order?: string[];
+	allow_fallbacks?: boolean;
 	ignore?: string[];
 	quantizations?: string[];
 }

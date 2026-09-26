@@ -5,6 +5,8 @@
  * the pipeline can render its output without having to parse display text.
  */
 
+import { ASTROEX_LLM_HEADERS } from "./constants";
+
 const API_BASE = "https://openrouter.ai/api/v1";
 const ONE_MILLION = 1_000_000;
 const REQUIRED_QUANTIZATION = "fp8";
@@ -161,6 +163,7 @@ async function fetchEndpoints(
 				headers: {
 					Authorization: `Bearer ${apiKey}`,
 					Accept: "application/json",
+					...ASTROEX_LLM_HEADERS,
 				},
 				signal: timeoutController.signal,
 			},

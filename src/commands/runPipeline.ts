@@ -144,7 +144,14 @@ async function resolveStageProviderRouting({
 		);
 	}
 	throwIfCancelled(signal);
-	return { ...configuredRouting, only: selection.providerSlugs };
+	return {
+		...configuredRouting,
+		only: selection.providerSlugs,
+		// The sentinel slug is replaced here, so the preference order and the
+		// no-fallback policy must be re-derived from the resolved slugs.
+		order: [...selection.providerSlugs],
+		allow_fallbacks: false,
+	};
 }
 
 export interface RunPipelineOptions extends GlobalArgs {

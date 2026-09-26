@@ -21,6 +21,8 @@ export interface LLMRequestLogData {
 	reasoning_effort?: string;
 	providerRouting?: {
 		only?: string[];
+		order?: string[];
+		allow_fallbacks?: boolean;
 		ignore?: string[];
 		quantizations?: string[];
 	};
@@ -202,6 +204,12 @@ export function formatLLMRequest(
 	if (data.provider === "openrouter" && data.providerRouting) {
 		if (data.providerRouting.only?.length) {
 			params.push(`provider.only=${data.providerRouting.only.join(",")}`);
+		}
+		if (data.providerRouting.order?.length) {
+			params.push(`provider.order=${data.providerRouting.order.join(",")}`);
+		}
+		if (data.providerRouting.allow_fallbacks !== undefined) {
+			params.push(`allow_fallbacks=${data.providerRouting.allow_fallbacks}`);
 		}
 		if (data.providerRouting.ignore?.length) {
 			params.push(`provider.ignore=${data.providerRouting.ignore.join(",")}`);

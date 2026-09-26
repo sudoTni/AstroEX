@@ -1,6 +1,6 @@
 /**
  * AstroEX - Production-ready Indeed job acquisition, filtering, and evaluation tool
- * Version 0.13.0
+ * Version 0.1326.0
  *
  * This is the main entry point for the AstroEX application.
  * It sets up the CLI interface using yargs and registers all commands.

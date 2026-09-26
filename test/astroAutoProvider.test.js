@@ -72,6 +72,12 @@ test("astro_auto_provider selects and formats ranked FP8 OpenRouter providers", 
 		"https://openrouter.ai/api/v1/models/author/model/endpoints",
 	);
 	assert.equal(calls[0].init.headers.Authorization, "Bearer test-key");
+	assert.equal(calls[0].init.headers.Accept, "application/json");
+	assert.equal(
+		calls[0].init.headers["HTTP-Referer"],
+		"https://github.com/sudoTni/AstroEX",
+	);
+	assert.equal(calls[0].init.headers["X-Title"], "AstroEX");
 	assert.deepEqual(result.providerSlugs, ["fast", "steady"]);
 	assert.equal(result.excludedCount, 1);
 	assert.match(

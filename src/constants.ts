@@ -1,6 +1,6 @@
 /**
  * Application constants and configuration for AstroEX
- * Version 0.13.0
+ * Version 0.1326.0
  *
  * This file contains all constants used throughout the application.
  * Centralized constants improve maintainability and consistency.
@@ -28,7 +28,16 @@ import * as path from "node:path";
 export const APP_NAME = "AstroEX";
 
 /** Application version */
-export const APP_VERSION = "0.13.0";
+export const APP_VERSION = "0.1326.0";
+
+/**
+ * Required identification headers for every outbound LLM API request.
+ * The values are fixed by the OpenRouter attribution policy and are not configurable.
+ */
+export const ASTROEX_LLM_HEADERS = {
+	"HTTP-Referer": "https://github.com/sudoTni/AstroEX",
+	"X-Title": "AstroEX",
+} as const;
 
 /** Application description */
 export const APP_DESCRIPTION =

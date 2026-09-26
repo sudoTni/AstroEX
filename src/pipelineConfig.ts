@@ -63,12 +63,16 @@ export function parseOpenRouterProviderRouting(
 	value: unknown,
 ): OpenRouterProviderRouting | undefined {
 	const only = parseCommaSeparatedList(value);
-	return only ? { only } : undefined;
+	// A restricted route never falls back, and the preference order mirrors the
+	// selected slugs. `buildStageRouting` re-derives both from `only`.
+	return only ? { only, order: [...only], allow_fallbacks: false } : undefined;
 }
 
 const OpenRouterProviderRoutingSchema = z
 	.object({
 		only: z.array(z.string().trim().min(1)).min(1).optional(),
+		order: z.array(z.string().trim().min(1)).min(1).optional(),
+		allow_fallbacks: z.boolean().optional(),
 		ignore: z.array(z.string().trim().min(1)).min(1).optional(),
 		quantizations: z.array(z.string().trim().min(1)).min(1).optional(),
 	})
@@ -284,6 +288,11 @@ export function buildPipelineConfig(
 		}
 		return {
 			...(only !== undefined ? { only } : {}),
+			// A restricted route never falls back, and the preference order always
+			// mirrors the selected slugs.
+			...(only !== undefined
+				? { order: [...only], allow_fallbacks: false }
+				: {}),
 			...(ignoreList !== undefined ? { ignore: ignoreList } : {}),
 			...(quantList !== undefined ? { quantizations: quantList } : {}),
 		};
